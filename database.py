@@ -1,6 +1,5 @@
 # $env:DATABASE_URL="postgresql://emprend_db_user:dhlq3PHm09twtrGxblqcR8YB9lKVbPWt@dpg-d3rb6uhr0fns73cslfs0-a.oregon-postgres.render.com/emprend_db"
 import pandas as pd
-import sqlite3
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 import os
@@ -54,11 +53,8 @@ def update_product(product_id, data, user_id):
 
 def delete_product(product_id, user_id):
     with engine.connect() as connection:
-        delete_sales_query = text("DELETE FROM sales WHERE product_id = :product_id AND user_id = :user_id")
-        connection.execute(delete_sales_query, {"product_id": int(product_id), "user_id": int(user_id)})
-        
-        delete_product_query = text("DELETE FROM products WHERE product_id = :product_id AND user_id = :user_id")
-        connection.execute(delete_product_query, {"product_id": int(product_id), "user_id": int(user_id)})
+        query = text("DELETE FROM products WHERE product_id = :product_id AND user_id = :user_id")
+        connection.execute(query, {"product_id": int(product_id), "user_id": int(user_id)})
         connection.commit()
 
 def update_category(category_id, data, user_id):
@@ -122,7 +118,6 @@ def delete_expense_category(category_id, user_id):
         connection.execute(query, {"category_id": int(category_id), "user_id": int(user_id)})
         connection.commit()
 
-# ### INICIO: NUEVA FUNCIÓN ###
 def update_user_password(user_id, new_password_hash):
     with engine.connect() as connection:
         query = text("""
@@ -131,7 +126,6 @@ def update_user_password(user_id, new_password_hash):
         """)
         connection.execute(query, {"password": new_password_hash, "user_id": int(user_id)})
         connection.commit()
-# ### FIN: NUEVA FUNCIÓN ###
 
 # --- FUNCIONES PARA DROPDOWNS ---
 def get_product_options(user_id):
@@ -201,3 +195,32 @@ def calculate_financials(start_date, end_date, user_id, see_all=False):
     results["gross_margin"] = (results["gross_profit"] / results["total_revenue"] * 100) if results["total_revenue"] > 0 else 0
     
     return results
+
+# ### INICIO: NUEVAS FUNCIONES DE ADMINISTRACIÓN ###
+def get_all_users():
+    query = text("SELECT id, username, first_login, is_blocked, must_change_password FROM users")
+    return pd.read_sql(query, engine)
+
+def record_first_login(user_id):
+    with engine.connect() as connection:
+        query = text("UPDATE users SET first_login = NOW() WHERE id = :user_id AND first_login IS NULL")
+        connection.execute(query, {"user_id": int(user_id)})
+        connection.commit()
+
+def set_user_block_status(user_id, is_blocked):
+    with engine.connect() as connection:
+        query = text("UPDATE users SET is_blocked = :status WHERE id = :user_id")
+        connection.execute(query, {"status": is_blocked, "user_id": int(user_id)})
+        connection.commit()
+
+def reset_user_password(user_id, new_hashed_password):
+    with engine.connect() as connection:
+        query = text("UPDATE users SET password = :password, must_change_password = TRUE WHERE id = :user_id")
+        connection.execute(query, {"password": new_hashed_password, "user_id": int(user_id)})
+        connection.commit()
+
+def delete_user(user_id):
+    with engine.connect() as connection:
+        query = text("DELETE FROM users WHERE id = :user_id")
+        connection.execute(query, {"user_id": int(user_id)})
+        connection.commit()

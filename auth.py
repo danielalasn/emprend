@@ -6,11 +6,13 @@ import pandas as pd
 login_manager = LoginManager()
 
 class User(UserMixin):
-    def __init__(self, id, username, password, must_change_password):
+    def __init__(self, id, username, password, must_change_password, is_blocked, first_login):
         self.id = id
         self.username = username
         self.password = password
         self.must_change_password = must_change_password
+        self.is_blocked = is_blocked
+        self.first_login = first_login
 
     @staticmethod
     def get(user_id):
@@ -23,7 +25,9 @@ class User(UserMixin):
                     id=user_data['id'], 
                     username=user_data['username'], 
                     password=user_data['password'],
-                    must_change_password=user_data['must_change_password']
+                    must_change_password=user_data['must_change_password'],
+                    is_blocked=user_data['is_blocked'],
+                    first_login=user_data['first_login']
                 )
         except Exception as e:
             print(f"Error getting user: {e}")
@@ -40,7 +44,9 @@ class User(UserMixin):
                     id=user_data['id'], 
                     username=user_data['username'], 
                     password=user_data['password'],
-                    must_change_password=user_data['must_change_password']
+                    must_change_password=user_data['must_change_password'],
+                    is_blocked=user_data['is_blocked'],
+                    first_login=user_data['first_login']
                 )
         except Exception as e:
             print(f"Error finding user: {e}")
