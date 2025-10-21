@@ -3,14 +3,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from database import engine
 import pandas as pd
 
-# ### LÍNEA AÑADIDA: Se crea el login_manager aquí ###
 login_manager = LoginManager()
 
 class User(UserMixin):
-    def __init__(self, id, username, password):
+    def __init__(self, id, username, password, must_change_password):
         self.id = id
         self.username = username
         self.password = password
+        self.must_change_password = must_change_password
 
     @staticmethod
     def get(user_id):
@@ -19,7 +19,12 @@ class User(UserMixin):
             user_df = pd.read_sql(query, engine)
             if not user_df.empty:
                 user_data = user_df.iloc[0]
-                return User(id=user_data['id'], username=user_data['username'], password=user_data['password'])
+                return User(
+                    id=user_data['id'], 
+                    username=user_data['username'], 
+                    password=user_data['password'],
+                    must_change_password=user_data['must_change_password']
+                )
         except Exception as e:
             print(f"Error getting user: {e}")
         return None
@@ -31,7 +36,12 @@ class User(UserMixin):
             user_df = pd.read_sql(query, engine)
             if not user_df.empty:
                 user_data = user_df.iloc[0]
-                return User(id=user_data['id'], username=user_data['username'], password=user_data['password'])
+                return User(
+                    id=user_data['id'], 
+                    username=user_data['username'], 
+                    password=user_data['password'],
+                    must_change_password=user_data['must_change_password']
+                )
         except Exception as e:
             print(f"Error finding user: {e}")
         return None

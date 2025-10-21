@@ -1,14 +1,18 @@
+# $env:DATABASE_URL="postgresql://emprend_db_user:dhlq3PHm09twtrGxblqcR8YB9lKVbPWt@dpg-d3rb6uhr0fns73cslfs0-a.oregon-postgres.render.com/emprend_db"
 import pandas as pd
+import sqlite3
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 import os
 
-# $env:DATABASE_URL="postgresql://emprend_db_user:dhlq3PHm09twtrGxblqcR8YB9lKVbPWt@dpg-d3rb6uhr0fns73cslfs0-a.oregon-postgres.render.com/emprend_db"
+# --- CONFIGURACIÓN DE LA BASE DE DATOS ---
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(DATABASE_URL)
 
+# --- FUNCIONES DE CARGA ---
 def load_products(user_id):
     query = text("SELECT * FROM products WHERE user_id = :user_id")
     return pd.read_sql(query, engine, params={"user_id": int(user_id)})
@@ -16,8 +20,6 @@ def load_products(user_id):
 def load_sales(user_id):
     query = text("SELECT * FROM sales WHERE user_id = :user_id")
     return pd.read_sql(query, engine, params={"user_id": int(user_id)})
-
-
 
 def load_expenses(user_id):
     query = text("SELECT * FROM expenses WHERE user_id = :user_id")
@@ -120,32 +122,40 @@ def delete_expense_category(category_id, user_id):
         connection.execute(query, {"category_id": int(category_id), "user_id": int(user_id)})
         connection.commit()
 
+# ### INICIO: NUEVA FUNCIÓN ###
+def update_user_password(user_id, new_password_hash):
+    with engine.connect() as connection:
+        query = text("""
+            UPDATE users SET password = :password, must_change_password = FALSE 
+            WHERE id = :user_id
+        """)
+        connection.execute(query, {"password": new_password_hash, "user_id": int(user_id)})
+        connection.commit()
+# ### FIN: NUEVA FUNCIÓN ###
+
 # --- FUNCIONES PARA DROPDOWNS ---
 def get_product_options(user_id):
     try:
-        products_df = load_products(user_id)
+        products_df = load_products(int(user_id))
         if products_df.empty: return []
         return [{'label': f"{row['name']} (Stock: {row['stock']})", 'value': row['product_id']} for _, row in products_df.iterrows()]
-    except Exception:
-        return []
+    except Exception: return []
 
 def get_category_options(user_id):
     try:
-        categories_df = load_categories(user_id)
+        categories_df = load_categories(int(user_id))
         if categories_df.empty: return []
         return [{'label': row['name'], 'value': row['category_id']} for _, row in categories_df.iterrows()]
-    except Exception:
-        return []
+    except Exception: return []
 
 def get_expense_category_options(user_id):
     try:
-        expense_cat_df = load_expense_categories(user_id)
+        expense_cat_df = load_expense_categories(int(user_id))
         if expense_cat_df.empty: return []
         return [{'label': row['name'], 'value': row['expense_category_id']} for _, row in expense_cat_df.iterrows()]
-    except Exception:
-        return []
+    except Exception: return []
 
-
+# --- FUNCIÓN DE CÁLCULO FINANCIERO ---
 def calculate_financials(start_date, end_date, user_id, see_all=False):
     user_id = int(user_id)
     all_sales = load_sales(user_id)
