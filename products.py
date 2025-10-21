@@ -2,156 +2,426 @@ from dash import dcc, html, dash_table
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
-import pandas as pd
 from dash.dash_table.Format import Format, Scheme
+import pandas as pd
+from flask_login import current_user
+import dash
 
 from app import app
-from database import load_products, load_categories, get_product_options, get_category_options, update_stock
+from database import (
+    load_products, load_categories, get_product_options, get_category_options, 
+    update_stock, update_product, delete_product, update_category, delete_category
+)
 
 def get_layout():
-    return dbc.Tabs(id="product-sub-tabs", active_tab="sub-tab-inventory", children=[
-        dbc.Tab(label="Inventario", tab_id="sub-tab-inventory", children=[
-            html.Div(className="p-4", children=[
-                html.H3("Inventario de Productos"),
-                dash_table.DataTable(
-                    id='products-table',
-                    columns=[
-                        {"name": "Nombre", "id": "Nombre"},
-                        {"name": "Categoría", "id": "Categoría"},
-                        {"name": "Descripción", "id": "description"},
-                        {"name": "Costo", "id": "cost", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
-                        {"name": "Precio", "id": "price", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
-                        {"name": "Stock", "id": "stock"},
-                        {"name": "Umbral Alerta", "id": "alert_threshold"}
-                    ],
-                    page_size=15,          # Muestra 15 filas por página
-                    sort_action='native',  # Permite ordenar por cualquier columna
-                )
-            ])
-        ]),
-        dbc.Tab(label="Añadir Producto", tab_id="sub-tab-add-product", children=[
-            dbc.Card(className="m-4", children=[
-                dbc.CardBody([
-                    html.H3("Añadir un Nuevo Producto"),
-                    html.Div(id="add-product-alert"),
-                    dbc.Row([
-                        dbc.Col(html.Div([html.Label("Nombre del Producto"), dbc.Input(id="product-name-input", type="text")]), width=6),
-                        dbc.Col(html.Div([html.Label("Categoría"), dcc.Dropdown(id="product-category-dropdown", placeholder="Crea o selecciona una categoría") ]), width=6),
-                    ], className="mb-3"),
-                    dbc.Row([dbc.Col(html.Div([html.Label("Descripción (Opcional)"), dbc.Textarea(id="product-desc-input")]), width=12)], className="mb-3"),
-                    dbc.Row([
-                        dbc.Col(html.Div([html.Label("Costo por Unidad"), dbc.Input(id="product-cost-input", type="number", min=0)]), width=3),
-                        dbc.Col(html.Div([html.Label("Precio de Venta"), dbc.Input(id="product-price-input", type="number", min=0)]), width=3),
-                        dbc.Col(html.Div([html.Label("Stock Inicial"), dbc.Input(id="product-stock-input", type="number", min=0, step=1)]), width=3),
-                        dbc.Col(html.Div([html.Label("Alertar si stock baja de:"), dbc.Input(id="product-alert-input", type="number", min=0, step=1, value=5)]), width=3),
-                    ], className="mb-3"),
-                    dbc.Button("Guardar Producto", id="save-product-button", color="success", n_clicks=0, className="mt-3")
+    return html.Div([
+        dcc.Store(id='store-product-id-to-edit'),
+        dcc.Store(id='store-product-id-to-delete'),
+        dcc.Store(id='store-category-id-to-edit'),
+        dcc.Store(id='store-category-id-to-delete'),
+
+        dbc.Modal([
+            dbc.ModalHeader("Editar Producto"),
+            dbc.ModalBody(dbc.Form([
+                dbc.Row([
+                    dbc.Col([dbc.Label("Nombre"), dbc.Input(id='edit-product-name')]),
+                    dbc.Col([dbc.Label("Categoría"), dcc.Dropdown(id='edit-product-category', options=[])]),
+                ]),
+                dbc.Label("Descripción", className="mt-2"),
+                dbc.Textarea(id='edit-product-desc'),
+                dbc.Row([
+                    dbc.Col([dbc.Label("Costo"), dbc.Input(id='edit-product-cost', type='number')]),
+                    dbc.Col([dbc.Label("Precio"), dbc.Input(id='edit-product-price', type='number')]),
+                    dbc.Col([dbc.Label("Stock"), dbc.Input(id='edit-product-stock', type='number')]),
+                    dbc.Col([dbc.Label("Umbral"), dbc.Input(id='edit-product-alert', type='number')]),
+                ], className="mt-2"),
+            ])),
+            dbc.ModalFooter([
+                dbc.Button("Cancelar", id="cancel-edit-product-button", color="secondary", className="ms-auto"),
+                dbc.Button("Guardar Cambios", id="save-edited-product-button", color="primary"),
+            ]),
+        ], id="product-edit-modal", is_open=False),
+
+        dbc.Modal([
+            dbc.ModalHeader("Confirmar Eliminación"),
+            dbc.ModalBody("¿Estás seguro de que quieres eliminar este producto? Todas las ventas asociadas también se eliminarán."),
+            dbc.ModalFooter([
+                dbc.Button("Cancelar", id="cancel-delete-product-button", color="secondary", className="ms-auto"),
+                dbc.Button("Eliminar", id="confirm-delete-product-button", color="danger"),
+            ]),
+        ], id="product-delete-confirm-modal", is_open=False),
+        
+        dbc.Modal([
+            dbc.ModalHeader("Editar Categoría"),
+            dbc.ModalBody(dbc.Form([
+                dbc.Label("Nombre de la Categoría"),
+                dbc.Input(id='edit-category-name', type='text')
+            ])),
+            dbc.ModalFooter([
+                dbc.Button("Cancelar", id="cancel-edit-category-button", color="secondary", className="ms-auto"),
+                dbc.Button("Guardar Cambios", id="save-edited-category-button", color="primary"),
+            ]),
+        ], id="category-edit-modal", is_open=False),
+
+        dbc.Modal([
+            dbc.ModalHeader("Confirmar Eliminación"),
+            dbc.ModalBody("¿Estás seguro de que quieres eliminar esta categoría? Se desasignará de todos los productos asociados."),
+            dbc.ModalFooter([
+                dbc.Button("Cancelar", id="cancel-delete-category-button", color="secondary", className="ms-auto"),
+                dbc.Button("Eliminar", id="confirm-delete-category-button", color="danger"),
+            ]),
+        ], id="category-delete-confirm-modal", is_open=False),
+
+        dbc.Tabs(id="product-sub-tabs", active_tab="sub-tab-inventory", children=[
+            dbc.Tab(label="Inventario", tab_id="sub-tab-inventory", children=[
+                html.Div(className="p-4", children=[
+                    html.H3("Inventario de Productos"),
+                    html.Div(id="products-table-container")
                 ])
-            ])
-        ]),
-        dbc.Tab(label="Añadir Stock", tab_id="sub-tab-add-stock", children=[
-            dbc.Card(className="m-4", children=[
-                dbc.CardBody([
-                    html.H3("Añadir Stock a un Producto Existente", className="card-title"),
-                    html.Div(id="add-stock-alert"),
-                    dbc.Row([
-                        dbc.Col([html.Label("Selecciona un Producto"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona un producto...")], width=6),
-                        dbc.Col([html.Label("Cantidad a Añadir"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1)], width=6),
-                    ], className="mb-3"),
-                    dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3")
+            ]),
+            dbc.Tab(label="Añadir Producto", tab_id="sub-tab-add-product", children=[
+                dbc.Card(className="m-4", children=[
+                    dbc.CardBody([
+                        html.H3("Añadir un Nuevo Producto"),
+                        html.Div(id="add-product-alert"),
+                        dbc.Row([
+                            dbc.Col(html.Div([html.Label("Nombre del Producto"), dbc.Input(id="product-name-input", type="text")]), width=6),
+                            dbc.Col(html.Div([html.Label("Categoría"), dcc.Dropdown(id="product-category-dropdown", placeholder="Crea o selecciona una categoría") ]), width=6),
+                        ], className="mb-3"),
+                        dbc.Row([dbc.Col(html.Div([html.Label("Descripción (Opcional)"), dbc.Textarea(id="product-desc-input")]), width=12)], className="mb-3"),
+                        dbc.Row([
+                            dbc.Col(html.Div([html.Label("Costo por Unidad"), dbc.Input(id="product-cost-input", type="number", min=0)]), width=3),
+                            dbc.Col(html.Div([html.Label("Precio de Venta"), dbc.Input(id="product-price-input", type="number", min=0)]), width=3),
+                            dbc.Col(html.Div([html.Label("Stock Inicial"), dbc.Input(id="product-stock-input", type="number", min=0, step=1)]), width=3),
+                            dbc.Col(html.Div([html.Label("Alertar si stock baja de:"), dbc.Input(id="product-alert-input", type="number", min=0, step=1, value=5)]), width=3),
+                        ], className="mb-3"),
+                        dbc.Button("Guardar Producto", id="save-product-button", color="success", n_clicks=0, className="mt-3")
+                    ])
                 ])
-            ])
-        ]),
-        dbc.Tab(label="Gestionar Categorías", tab_id="sub-tab-categories", children=[
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card(className="m-4", children=[
-                        dbc.CardBody([
-                            html.H3("Crear Nueva Categoría"),
-                            html.Div(id="add-category-alert"),
-                            dbc.Input(id="category-name-input", placeholder="Nombre de la nueva categoría", className="mb-2"),
-                            dbc.Button("Guardar Categoría", id="save-category-button", color="primary")
+            ]),
+            dbc.Tab(label="Añadir Stock", tab_id="sub-tab-add-stock", children=[
+                dbc.Card(className="m-4", children=[
+                    dbc.CardBody([
+                        html.H3("Añadir Stock a un Producto Existente", className="card-title"),
+                        html.Div(id="add-stock-alert"),
+                        dbc.Row([
+                            dbc.Col([html.Label("Selecciona un Producto"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona un producto...")], width=6),
+                            dbc.Col([html.Label("Cantidad a Añadir"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1)], width=6),
+                        ], className="mb-3"),
+                        dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3")
+                    ])
+                ])
+            ]),
+            dbc.Tab(label="Gestionar Categorías", tab_id="sub-tab-categories", children=[
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Card(className="m-4", children=[
+                            dbc.CardBody([
+                                html.H3("Crear Nueva Categoría"),
+                                html.Div(id="add-category-alert"),
+                                dbc.Input(id="category-name-input", placeholder="Nombre de la nueva categoría", className="mb-2"),
+                                dbc.Button("Guardar Categoría", id="save-category-button", color="primary")
+                            ])
                         ])
-                    ])
-                ], width=4),
-                dbc.Col([
-                    html.Div(className="p-4", children=[
-                        html.H3("Categorías Existentes"),
-                        dash_table.DataTable(id='categories-table', columns=[{"name": "ID Categoría", "id": "category_id"}, {"name": "Nombre", "id": "name"}])
-                    ])
-                ], width=8)
-            ])
-        ]),
+                    ], width=4),
+                    dbc.Col([
+                        html.Div(className="p-4", children=[
+                            html.H3("Categorías Existentes"),
+                            html.Div(id='categories-table-container')
+                        ])
+                    ], width=8)
+                ])
+            ]),
+        ])
     ])
 
 def register_callbacks(app):
     @app.callback(
         Output('add-product-alert', 'children'),
+        Output('store-data-signal', 'data', allow_duplicate=True),
         Input('save-product-button', 'n_clicks'),
         [State('product-name-input', 'value'), State('product-desc-input', 'value'), State('product-category-dropdown', 'value'),
          State('product-price-input', 'value'), State('product-cost-input', 'value'), State('product-stock-input', 'value'),
-         State('product-alert-input', 'value')],
+         State('product-alert-input', 'value'), State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
-    def add_product(n, name, desc, cat_id, price, cost, stock, alert):
-        if not all([name, cat_id, price, cost, stock, alert]):
-            return dbc.Alert("Todos los campos (excepto descripción) son obligatorios.", color="danger")
+    def add_product(n, name, desc, cat_id, price, cost, stock, alert, signal_data):
+        if n is None or n < 1:
+            raise PreventUpdate
+        if not current_user.is_authenticated:
+            raise PreventUpdate
         
+        user_id = current_user.id
+        if not all([name, cat_id, price is not None, cost is not None, stock is not None, alert is not None]):
+            return dbc.Alert("Todos los campos (excepto descripción) son obligatorios.", color="danger"), dash.no_update
+
         from database import engine
-        pd.DataFrame([{'name': name, 'description': desc, 'category_id': cat_id, 'price': price, 'cost': cost, 'stock': stock, 'alert_threshold': alert}]).to_sql('products', engine, if_exists='append', index=False)
-        return dbc.Alert(f"¡Producto '{name}' guardado!", color="success", dismissable=True, duration=4000)
+        pd.DataFrame([{'name': name, 'description': desc or "", 'category_id': cat_id, 
+                       'price': price, 'cost': cost, 'stock': stock, 
+                       'alert_threshold': alert, 'user_id': user_id}]).to_sql('products', engine, if_exists='append', index=False)
+        
+        new_signal = (signal_data or 0) + 1
+        return dbc.Alert(f"¡Producto '{name}' guardado!", color="success", dismissable=True, duration=4000), new_signal
 
     @app.callback(
         Output('add-stock-alert', 'children'),
+        Output('store-data-signal', 'data', allow_duplicate=True),
         Input('submit-add-stock-button', 'n_clicks'),
-        [State('add-stock-product-dropdown', 'value'), State('add-stock-quantity-input', 'value')],
+        [State('add-stock-product-dropdown', 'value'), State('add-stock-quantity-input', 'value'),
+         State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
-    def add_stock(n, prod_id, qty):
-        if not all([prod_id, qty]):
-            return dbc.Alert("Debes seleccionar un producto y cantidad.", color="warning", dismissable=True)
+    def add_stock(n, prod_id, qty, signal_data):
+        if n is None or n < 1:
+            raise PreventUpdate
+        if not current_user.is_authenticated:
+            raise PreventUpdate
         
-        df = load_products()
+        user_id = current_user.id
+        if not all([prod_id, qty]):
+            return dbc.Alert("Debes seleccionar un producto y cantidad.", color="warning", dismissable=True), dash.no_update
+        
+        df = load_products(user_id)
         stock, name = df.loc[df['product_id'] == prod_id, 'stock'].iloc[0], df.loc[df['product_id'] == prod_id, 'name'].iloc[0]
-        update_stock(prod_id, stock + qty)
-        return dbc.Alert(f"¡Stock de '{name}' actualizado!", color="success", dismissable=True, duration=4000)
+        update_stock(prod_id, stock + qty, user_id)
+        
+        new_signal = (signal_data or 0) + 1
+        return dbc.Alert(f"¡Stock de '{name}' actualizado!", color="success", dismissable=True, duration=4000), new_signal
 
     @app.callback(
         Output('add-category-alert', 'children'),
+        Output('store-data-signal', 'data', allow_duplicate=True),
         Input('save-category-button', 'n_clicks'),
-        State('category-name-input', 'value'),
+        [State('category-name-input', 'value'),
+         State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
-    def add_category(n_clicks, name):
-        if not name:
-            return dbc.Alert("El nombre no puede estar vacío.", color="warning")
-        
-        from database import engine
-        existing_cats = load_categories()
-        if name.lower() in existing_cats['name'].str.lower().tolist():
-            return dbc.Alert(f"La categoría '{name}' ya existe.", color="danger")
-        pd.DataFrame([{'name': name.title()}]).to_sql('categories', engine, if_exists='append', index=False)
-        return dbc.Alert(f"Categoría '{name.title()}' guardada.", color="success")
-
-    @app.callback(
-        Output('products-table', 'data'),
-        Output('add-stock-product-dropdown', 'options'),
-        Output('categories-table', 'data'),
-        Output('product-category-dropdown', 'options'),
-        [Input('main-tabs', 'active_tab'), Input('product-sub-tabs', 'active_tab')]
-    )
-    def refresh_products_components(main_tab, sub_tab):
-        if main_tab != 'tab-products':
+    def add_category(n_clicks, name, signal_data):
+        if n_clicks is None or n_clicks < 1:
+            raise PreventUpdate
+        if not current_user.is_authenticated:
             raise PreventUpdate
         
-        products_df = load_products()
-        categories_df = load_categories()
-
-        if not products_df.empty:
-            display_df = pd.merge(products_df, categories_df, on='category_id', how='left').fillna("Sin Categoría")
-            display_df = display_df.rename(columns={'name_x': 'Nombre', 'name_y': 'Categoría'})
-            display_df = display_df[['Nombre', 'Categoría', 'description', 'cost', 'price', 'stock', 'alert_threshold']]
-        else:
-            display_df = pd.DataFrame(columns=['Nombre', 'Categoría', 'description', 'cost', 'price', 'stock', 'alert_threshold'])
+        user_id = current_user.id
+        if not name:
+            return dbc.Alert("El nombre no puede estar vacío.", color="warning"), dash.no_update
         
-        return display_df.to_dict('records'), get_product_options(), categories_df.to_dict('records'), get_category_options()
+        from database import engine
+        existing_cats = load_categories(user_id)
+        if name.lower() in existing_cats['name'].str.lower().tolist():
+            return dbc.Alert(f"La categoría '{name}' ya existe.", color="danger"), dash.no_update
+        
+        pd.DataFrame([{'name': name.title(), 'user_id': user_id}]).to_sql('categories', engine, if_exists='append', index=False)
+        
+        new_signal = (signal_data or 0) + 1
+        return dbc.Alert(f"Categoría '{name.title()}' guardada.", color="success"), new_signal
+
+    @app.callback(
+        Output('products-table-container', 'children'),
+        Output('categories-table-container', 'children'),
+        Output('add-stock-product-dropdown', 'options'),
+        Output('product-category-dropdown', 'options'),
+        [Input('product-sub-tabs', 'active_tab'),
+         Input('store-data-signal', 'data')]
+    )
+    def refresh_products_components(sub_tab, signal_data):
+        if not current_user.is_authenticated:
+            raise PreventUpdate
+        
+        user_id = current_user.id
+        products_df = load_products(user_id)
+        categories_df = load_categories(user_id)
+
+        display_df = pd.DataFrame()
+        if not products_df.empty:
+            df = pd.merge(products_df, categories_df, on='category_id', how='left').fillna("Sin Categoría")
+            df = df.rename(columns={'name_x': 'Nombre', 'name_y': 'Categoría'})
+            df['editar'] = "✏️"
+            df['eliminar'] = "🗑️"
+            display_df = df
+        
+        products_table = dash_table.DataTable(
+            id='products-table',
+            columns=[
+                {"name": "Nombre", "id": "Nombre"}, {"name": "Categoría", "id": "Categoría"},
+                {"name": "Descripción", "id": "description"},
+                {"name": "Costo", "id": "cost", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
+                {"name": "Precio", "id": "price", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
+                {"name": "Stock", "id": "stock"}, {"name": "Umbral Alerta", "id": "alert_threshold"},
+                {"name": "Editar", "id": "editar"}, {"name": "Eliminar", "id": "eliminar"}
+            ],
+            data=display_df.to_dict('records'),
+            page_size=15, sort_action='native', filter_action='native',
+            style_cell_conditional=[{'if': {'column_id': 'editar'}, 'cursor': 'pointer'}, {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}]
+        )
+        
+        categories_df_display = pd.DataFrame()
+        if not categories_df.empty:
+            categories_df_display = categories_df.copy()
+            categories_df_display['editar'] = "✏️"
+            categories_df_display['eliminar'] = "🗑️"
+
+        categories_table = dash_table.DataTable(
+            id='categories-table', 
+            columns=[
+                {"name": "ID", "id": "category_id"}, {"name": "Nombre", "id": "name"},
+                {"name": "Editar", "id": "editar"}, {"name": "Eliminar", "id": "eliminar"}
+            ],
+            data=categories_df_display.to_dict('records'),
+            style_cell_conditional=[{'if': {'column_id': 'editar'}, 'cursor': 'pointer'}, {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}]
+        )
+        
+        return products_table, categories_table, get_product_options(user_id), get_category_options(user_id)
+
+    @app.callback(
+        Output('product-edit-modal', 'is_open'),
+        Output('product-delete-confirm-modal', 'is_open'),
+        Output('store-product-id-to-edit', 'data'),
+        Output('store-product-id-to-delete', 'data'),
+        Output('edit-product-name', 'value'),
+        Output('edit-product-category', 'value'),
+        Output('edit-product-desc', 'value'),
+        Output('edit-product-cost', 'value'),
+        Output('edit-product-price', 'value'),
+        Output('edit-product-stock', 'value'),
+        Output('edit-product-alert', 'value'),
+        Input('products-table', 'active_cell'),
+        State('products-table', 'derived_virtual_data'),
+        prevent_initial_call=True
+    )
+    def open_product_modals(active_cell, data):
+        if not current_user.is_authenticated or not active_cell or 'row' not in active_cell: 
+            raise PreventUpdate
+
+        user_id = current_user.id
+        row_idx = active_cell['row']
+        col_id = active_cell['column_id']
+
+        if not data or row_idx >= len(data):
+            raise PreventUpdate
+        
+        product_name_clicked = data[row_idx]['Nombre']
+        products_df = load_products(user_id)
+        product_info = products_df[products_df['name'] == product_name_clicked].iloc[0]
+        product_id = int(product_info['product_id'])
+
+        no_update_list = [dash.no_update] * 7
+
+        if col_id == "editar":
+            return True, False, product_id, None, product_info['name'], product_info['category_id'], product_info['description'], product_info['cost'], product_info['price'], product_info['stock'], product_info['alert_threshold']
+        
+        elif col_id == "eliminar":
+            return False, True, None, product_id, *no_update_list
+
+        return False, False, None, None, *no_update_list
+
+    @app.callback(
+        Output('product-edit-modal', 'is_open', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('save-edited-product-button', 'n_clicks'),
+        [State('store-product-id-to-edit', 'data'),
+         State('edit-product-name', 'value'), State('edit-product-desc', 'value'),
+         State('edit-product-category', 'value'), State('edit-product-price', 'value'),
+         State('edit-product-cost', 'value'), State('edit-product-stock', 'value'),
+         State('edit-product-alert', 'value'), State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def save_edited_product(n, product_id, name, desc, cat_id, price, cost, stock, alert, signal):
+        if n is None: raise PreventUpdate
+        if not product_id: raise PreventUpdate
+        
+        new_data = {
+            "name": name, "description": desc, "category_id": cat_id, "price": float(price),
+            "cost": float(cost), "stock": int(stock), "alert_threshold": int(alert)
+        }
+        update_product(product_id, new_data, current_user.id)
+        
+        return False, (signal or 0) + 1
+
+    @app.callback(
+        Output('product-delete-confirm-modal', 'is_open', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('confirm-delete-product-button', 'n_clicks'),
+        [State('store-product-id-to-delete', 'data'), State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def confirm_delete_product(n, product_id, signal):
+        if n is None: raise PreventUpdate
+        if not product_id: raise PreventUpdate
+        delete_product(product_id, current_user.id)
+        return False, (signal or 0) + 1
+
+    @app.callback(
+        Output('product-edit-modal', 'is_open', allow_duplicate=True),
+        Output('product-delete-confirm-modal', 'is_open', allow_duplicate=True),
+        [Input('cancel-edit-product-button', 'n_clicks'), Input('cancel-delete-product-button', 'n_clicks')],
+        prevent_initial_call=True
+    )
+    def close_product_modals(n_cancel_edit, n_cancel_delete):
+        return False, False
+
+    @app.callback(
+        Output('category-edit-modal', 'is_open'),
+        Output('category-delete-confirm-modal', 'is_open'),
+        Output('store-category-id-to-edit', 'data'),
+        Output('store-category-id-to-delete', 'data'),
+        Output('edit-category-name', 'value'),
+        Input('categories-table', 'active_cell'),
+        State('categories-table', 'derived_virtual_data'),
+        prevent_initial_call=True
+    )
+    def open_category_modals(active_cell, data):
+        if not current_user.is_authenticated or not active_cell or 'row' not in active_cell:
+            raise PreventUpdate
+
+        row_idx = active_cell['row']
+        col_id = active_cell['column_id']
+
+        if not data or row_idx >= len(data):
+            raise PreventUpdate
+            
+        category_id = data[row_idx]['category_id']
+        category_info = data[row_idx]
+        
+        if col_id == 'editar':
+            return True, False, category_id, None, category_info['name']
+        
+        elif col_id == 'eliminar':
+            return False, True, None, category_id, dash.no_update
+
+        return False, False, None, None, dash.no_update
+
+    @app.callback(
+        Output('category-edit-modal', 'is_open', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('save-edited-category-button', 'n_clicks'),
+        [State('store-category-id-to-edit', 'data'), State('edit-category-name', 'value'), State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def save_edited_category(n, category_id, name, signal):
+        if n is None: raise PreventUpdate
+        if not category_id: raise PreventUpdate
+        update_category(category_id, {"name": name}, current_user.id)
+        return False, (signal or 0) + 1
+
+    @app.callback(
+        Output('category-delete-confirm-modal', 'is_open', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('confirm-delete-category-button', 'n_clicks'),
+        [State('store-category-id-to-delete', 'data'), State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def confirm_delete_category(n, category_id, signal):
+        if n is None: raise PreventUpdate
+        if not category_id: raise PreventUpdate
+        delete_category(category_id, current_user.id)
+        return False, (signal or 0) + 1
+
+    @app.callback(
+        Output('category-edit-modal', 'is_open', allow_duplicate=True),
+        Output('category-delete-confirm-modal', 'is_open', allow_duplicate=True),
+        [Input('cancel-edit-category-button', 'n_clicks'), Input('cancel-delete-category-button', 'n_clicks')],
+        prevent_initial_call=True
+    )
+    def close_category_modals(n_cancel_edit, n_cancel_delete):
+        return False, False

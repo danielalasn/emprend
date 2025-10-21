@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
+from flask_login import current_user
 
 from app import app
 from database import load_sales, load_expenses, load_products, load_expense_categories, calculate_financials
@@ -123,74 +124,48 @@ def register_callbacks(app):
          Input('finances-date-picker', 'start_date'),
          Input('finances-date-picker', 'end_date'),
          Input('finances-see-all-switch', 'value'),
-         Input('store-data-signal', 'data')] # ### CAMBIO: Se añade el "avisador" como Input ###
+         Input('store-data-signal', 'data')]
     )
-    def update_finances_summary_tab(active_tab, start_date, end_date, see_all, signal_data): # ### CAMBIO: Se añade el argumento ###
-        if active_tab != 'sub-tab-summary' or not all([start_date, end_date]):
+    def update_finances_summary_tab(active_tab, start_date, end_date, see_all, signal_data):
+        if not current_user.is_authenticated or active_tab != 'sub-tab-summary' or not all([start_date, end_date]):
             raise PreventUpdate
 
-        if see_all:
-            sales_df = load_sales()
-            expenses_df = load_expenses()
-            date_picker_disabled = True
-        else:
-            all_sales_df = load_sales()
-            all_expenses_df = load_expenses()
-            all_sales_df['sale_date'] = pd.to_datetime(all_sales_df['sale_date'])
-            all_expenses_df['expense_date'] = pd.to_datetime(all_expenses_df['expense_date'])
-            end_date_inclusive = pd.to_datetime(end_date) + timedelta(days=1)
-            sales_df = all_sales_df[(all_sales_df['sale_date'] >= start_date) & (all_sales_df['sale_date'] < end_date_inclusive)]
-            expenses_df = all_expenses_df[(all_expenses_df['expense_date'] >= start_date) & (all_expenses_df['expense_date'] < end_date_inclusive)]
-            date_picker_disabled = False
+        user_id = current_user.id
         
-        products_df = load_products()
-        total_revenue, gross_profit, total_cogs, net_profit = 0, 0, 0, 0
-        num_sales = 0
+        results = calculate_financials(start_date, end_date, user_id, see_all=see_all)
         
-        if not sales_df.empty:
-            num_sales = len(sales_df)
-            if not products_df.empty:
-                merged_df = pd.merge(sales_df, products_df, on='product_id', how='left')
-                merged_df.dropna(subset=['cost'], inplace=True)
-                merged_df['cogs'] = merged_df['cost'] * merged_df['quantity']
-                total_cogs = merged_df['cogs'].sum()
-                total_revenue = merged_df['total_amount'].sum()
-                gross_profit = total_revenue - total_cogs
-
-        total_expenses = expenses_df['amount'].sum() if not expenses_df.empty else 0
-        net_profit = gross_profit - total_expenses
+        expenses_df = results['expenses_df']
+        merged_df = results['merged_df']
+        date_picker_disabled = see_all
         
         pnl_data = [
-            {"Concepto": "Ingresos Totales (Ventas)", "Monto": f"${total_revenue:,.2f}"},
-            {"Concepto": "(-) Costo de Productos (COGS)", "Monto": f"${total_cogs:,.2f}"},
-            {"Concepto": "=> Ganancia Bruta", "Monto": f"${gross_profit:,.2f}"},
-            {"Concepto": "(-) Gastos Operativos", "Monto": f"${total_expenses:,.2f}"},
-            {"Concepto": "=> Ganancia Neta", "Monto": f"${net_profit:,.2f}"}
+            {"Concepto": "Ingresos Totales (Ventas)", "Monto": f"${results['total_revenue']:,.2f}"},
+            {"Concepto": "(-) Costo de Productos (COGS)", "Monto": f"${results['total_cogs']:,.2f}"},
+            {"Concepto": "=> Ganancia Bruta", "Monto": f"${results['gross_profit']:,.2f}"},
+            {"Concepto": "(-) Gastos Operativos", "Monto": f"${results['total_expenses']:.2f}"},
+            {"Concepto": "=> Ganancia Neta", "Monto": f"${results['net_profit']:,.2f}"}
         ]
 
-        gross_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
-        net_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
-        avg_ticket = total_revenue / num_sales if num_sales > 0 else 0
-        
-        gross_margin_card = dbc.CardBody([html.H4("Margen Ganancia Bruta", className="card-title"), html.H2(f"{gross_margin:.2f}%")])
-        net_margin_card = dbc.CardBody([html.H4("Margen Ganancia Neta", className="card-title"), html.H2(f"{net_margin:.2f}%")])
-        avg_ticket_card = dbc.CardBody([html.H4("Ticket de Venta Promedio", className="card-title"), html.H2(f"${avg_ticket:,.2f}")])
+        gross_margin_card = dbc.CardBody([html.H4("Margen Ganancia Bruta", className="card-title"), html.H2(f"{results['gross_margin']:.2f}%")])
+        net_margin_card = dbc.CardBody([html.H4("Margen Ganancia Neta", className="card-title"), html.H2(f"{results['net_margin']:.2f}%")])
+        avg_ticket_card = dbc.CardBody([html.H4("Ticket de Venta Promedio", className="card-title"), html.H2(f"${results['avg_ticket']:,.2f}")])
 
         fig_expenses = px.pie(title="Gastos por Categoría", names=['Sin Gastos'], values=[1]).update_traces(textinfo='none', hoverinfo='none')
 
         if not expenses_df.empty:
-            exp_cat_df = load_expense_categories()
-            expenses_with_names = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left')
-            expense_summary = expenses_with_names.groupby('name')['amount'].sum().reset_index()
-            fig_expenses = px.pie(expense_summary, names='name', values='amount', title="Gastos por Categoría", hole=.3)
+            exp_cat_df = load_expense_categories(user_id)
+            if not exp_cat_df.empty:
+                expenses_with_names = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left')
+                expense_summary = expenses_with_names.groupby('name')['amount'].sum().reset_index()
+                fig_expenses = px.pie(expense_summary, names='name', values='amount', title="Gastos por Categoría", hole=.3)
         fig_expenses.update_layout(margin=dict(t=30, b=0, l=0, r=0))
 
         product_performance_data = []
-        if 'merged_df' in locals():
+        if not merged_df.empty:
             prod_perf = merged_df.groupby('name').agg(
                 unidades_vendidas=('quantity', 'sum'),
                 ingresos_totales=('total_amount', 'sum'),
-                costo_total=('cogs', 'sum')
+                costo_total=('cogs_total', 'sum')
             ).reset_index()
             prod_perf['ganancia_bruta'] = prod_perf['ingresos_totales'] - prod_perf['costo_total']
             
@@ -220,15 +195,15 @@ def register_callbacks(app):
          Input('comparison-date-picker-b', 'end_date')]
     )
     def update_comparison_tab(active_sub_tab, start_a, end_a, start_b, end_b):
-        if active_sub_tab != 'sub-tab-comparison' or not all([start_a, end_a, start_b, end_b]):
+        if not current_user.is_authenticated or active_sub_tab != 'sub-tab-comparison' or not all([start_a, end_a, start_b, end_b]):
             raise PreventUpdate
 
-        data_a = calculate_financials(start_a, end_a)
-        data_b = calculate_financials(start_b, end_b)
+        user_id = current_user.id
+        data_a = calculate_financials(start_a, end_a, user_id)
+        data_b = calculate_financials(start_b, end_b, user_id)
 
         def create_comparison_card(title, val_a, val_b, format_str, is_percent=False, invert_colors=False):
             diff = val_b - val_a
-            pct_change = (diff / val_a * 100) if val_a != 0 else float('inf')
             
             color_good = "success"
             color_bad = "danger"
@@ -236,30 +211,34 @@ def register_callbacks(app):
             if invert_colors:
                 color_good, color_bad = color_bad, color_good
             
-            if pct_change == float('inf') and val_b != 0:
-                change_str, color = " (Nuevo)", "success"
-            elif diff > 0:
-                change_str, color = f" (▲ {pct_change:.2f}%)", color_good
-            elif diff < 0:
-                change_str, color = f" (▼ {abs(pct_change):.2f}%)", color_bad   
-            else: 
-                change_str, color = " (=)", "secondary"
+            if val_a == 0 and val_b != 0:
+                pct_change_str, color = " (Nuevo)", "success"
+            elif val_a != 0 and val_b == 0:
+                pct_change_str, color = f" (▼ 100.00%)", color_bad
+            elif val_a != 0:
+                pct_change = (diff / abs(val_a)) * 100
+                if diff > 0:
+                    pct_change_str, color = f" (▲ {pct_change:.2f}%)", color_good
+                else:
+                    pct_change_str, color = f" (▼ {abs(pct_change):.2f}%)", color_bad
+            else:
+                pct_change_str, color = " (=)", "secondary"
 
             suffix = " %" if is_percent else ""
             label_a = f"{format_str.format(val_a)}{suffix}"
             label_b = f"{format_str.format(val_b)}{suffix}"
             
             max_val = max(abs(val_a), abs(val_b))
-            val_a_pct, val_b_pct = (0, 0) if max_val == 0 else ((val_a / max_val * 100), (val_b / max_val * 100))
+            val_a_pct, val_b_pct = (0, 0) if max_val == 0 else ((abs(val_a) / max_val * 100), (abs(val_b) / max_val * 100))
 
             return dbc.Card([
                     dbc.CardHeader(title),
                     dbc.CardBody([
                         html.P("Período A", className="card-text fw-bold"),
-                        dbc.Progress(label=label_a, value=val_a_pct, color="secondary", className="mb-2"),
+                        dbc.Progress(label=label_a, value=val_a_pct, color="danger" if val_a < 0 else "secondary", className="mb-2"),
                         html.P("Período B", className="card-text fw-bold mt-3"),
-                        dbc.Progress(label=label_b, value=val_b_pct, color="primary", className="mb-2"),
-                        html.H5(html.Span(change_str, className=f"text-{color} mt-3 d-block"))
+                        dbc.Progress(label=label_b, value=val_b_pct, color="danger" if val_b < 0 else "primary", className="mb-2"),
+                        html.H5(html.Span(pct_change_str, className=f"text-{color} mt-3 d-block"))
                     ])
                 ])
 
@@ -298,7 +277,7 @@ def register_callbacks(app):
         
         bottom_rows_layout = [col_volumen, col_costos, col_ganancias, col_margenes]
         
-        products_df = load_products()
+        products_df = load_products(user_id)
         
         sales_df_a = data_a['sales_df']
         if not sales_df_a.empty:
@@ -310,10 +289,7 @@ def register_callbacks(app):
                            color_discrete_sequence=['#6c757d'])
             fig_a.update_layout(
                 xaxis=dict(autorange='reversed'),
-                yaxis=dict(
-                    side='right',
-                    autorange='reversed'
-                ),
+                yaxis=dict(side='right', autorange='reversed'),
                 margin=dict(l=20, r=150, t=40, b=20),
                 yaxis_title=None
             )
@@ -336,8 +312,8 @@ def register_callbacks(app):
                 xaxis_title="Unidades Vendidas",
                 margin=dict(l=150, r=20, t=40, b=20),
                 yaxis_title=None,
-                title_x=1,
-                title_xanchor='right'
+                title_x=0,
+                title_xanchor='left'
             )
         else:
             fig_b = px.bar(title="Top 5 Productos Vendidos (Período B)").update_layout(
