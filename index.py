@@ -16,6 +16,7 @@ from expenses import get_layout as get_expenses_layout, register_callbacks as re
 from products import get_layout as get_products_layout, register_callbacks as register_products_callbacks
 from login import get_login_layout, get_change_password_layout, register_login_callbacks
 from admin import get_layout as get_admin_layout, register_callbacks as register_admin_callbacks
+from materia_prima import get_layout as get_material_layout, register_callbacks as register_material_callbacks 
 
 # --- Configuración de Flask-Login ---
 login_manager.init_app(server)
@@ -35,6 +36,7 @@ def get_main_app_layout():
         dbc.Tab(label="Ventas", tab_id="tab-sales"),
         dbc.Tab(label="Gastos", tab_id="tab-expenses"),
         dbc.Tab(label="Productos", tab_id="tab-products"),
+        dbc.Tab(label="Insumos", tab_id="tab-material"),
     ]
     if current_user.is_authenticated and current_user.is_admin:
         admin_tab = dbc.Tab(label="Administrar", tab_id="tab-admin", tab_style={"backgroundColor": "#ffc107"})
@@ -102,6 +104,8 @@ def render_tab_content(active_tab):
         return get_expenses_layout()
     elif active_tab == 'tab-products':
         return get_products_layout()
+    elif active_tab == 'tab-material':
+        return get_material_layout()
     elif active_tab == 'tab-admin':
         return get_admin_layout()
     return html.P("Esta es una pestaña desconocida.")
@@ -145,6 +149,7 @@ register_expenses_callbacks(app)
 register_products_callbacks(app)
 register_login_callbacks(app)
 register_admin_callbacks(app)
+register_material_callbacks(app)
 
 if __name__ == '__main__':
     app.run(debug=True)

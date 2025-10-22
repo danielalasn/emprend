@@ -82,22 +82,24 @@ def update_stock(product_id, new_stock, user_id):
         connection.execute(query, {"stock": int(new_stock), "product_id": int(product_id), "user_id": int(user_id)})
         connection.commit()
 
-def update_product(product_id, data, user_id):
-    with engine.connect() as connection:
-        query = text("""
-            UPDATE products SET name = :name, description = :description, category_id = :category_id,
-            price = :price, cost = :cost, stock = :stock, alert_threshold = :alert_threshold
-            WHERE product_id = :product_id AND user_id = :user_id
-        """)
-        # Asegurarse que los valores numéricos sean correctos
-        data['price'] = float(data.get('price', 0))
-        data['cost'] = float(data.get('cost', 0))
-        data['stock'] = int(data.get('stock', 0))
-        data['alert_threshold'] = int(data.get('alert_threshold', 0))
-        data['product_id'] = int(product_id)
-        data['user_id'] = int(user_id)
-        connection.execute(query, data)
-        connection.commit()
+# EN database.py: REEMPLAZA esta función
+
+def update_product(connection, product_id, data, user_id):
+    """Actualiza un producto usando una conexión existente."""
+    query = text("""
+        UPDATE products SET name = :name, description = :description, category_id = :category_id,
+        price = :price, cost = :cost, stock = :stock, alert_threshold = :alert_threshold
+        WHERE product_id = :product_id AND user_id = :user_id
+    """)
+    # Asegurarse que los valores numéricos sean correctos
+    data['price'] = float(data.get('price', 0))
+    data['cost'] = float(data.get('cost', 0))
+    data['stock'] = int(data.get('stock', 0))
+    data['alert_threshold'] = int(data.get('alert_threshold', 0))
+    data['product_id'] = int(product_id)
+    data['user_id'] = int(user_id)
+    connection.execute(query, data)
+    # NO HAY COMMIT
 
 def delete_product(product_id, user_id):
     """Borrado suave de producto."""
@@ -409,3 +411,389 @@ def attempt_stock_deduction(product_id, quantity, user_id):
             })
             # El commit es automático al salir del 'with connection.begin()' si no hay error
             return result.rowcount == 1 # True si 1 fila fue afectada (éxito)
+
+# --- NUEVAS FUNCIONES DE CARGA DE MATERIA PRIMA ---
+# database.py
+# ... (existing imports and functions) ...
+
+# --- NUEVAS FUNCIONES CRUD PARA MATERIA PRIMA ---
+
+# --- NUEVAS FUNCIONES DE CARGA DE MATERIA PRIMA ---
+# --- NUEVAS FUNCIONES DE CARGA DE MATERIA PRIMA ---
+
+def load_raw_materials(user_id, include_inactive=False):
+    """Carga materias primas para un usuario. Por defecto, solo activas."""
+    params = {"user_id": int(user_id)}
+    sql = "SELECT * FROM raw_materials WHERE user_id = :user_id"
+    if not include_inactive:
+        sql += " AND is_active = TRUE"
+    sql += " ORDER BY name"
+    query = text(sql)
+    # Convertir columnas NUMERIC a float en Pandas
+    df = pd.read_sql(query, engine, params=params)
+    numeric_cols = ['current_stock', 'average_cost', 'alert_threshold']
+    for col in numeric_cols:
+         if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    return df
+
+def get_raw_material_options(user_id):
+    """Obtiene materias primas activas para dropdowns."""
+    try:
+        # Selecciona solo activas y formatea para dropdown
+        query = text("""
+            SELECT material_id as value, name || ' (' || unit_measure || ')' as label
+            FROM raw_materials
+            WHERE user_id = :user_id AND is_active = TRUE
+            ORDER BY name
+        """)
+        materials_df = pd.read_sql(query, engine, params={"user_id": int(user_id)})
+        return materials_df.to_dict('records')
+    except Exception as e:
+        print(f"Error en get_raw_material_options: {e}")
+        return []
+
+# --- NUEVAS FUNCIONES DE ACTUALIZACIÓN DE MATERIA PRIMA ---
+
+def add_raw_material(data, user_id):
+    """Añade o reactiva una materia prima."""
+    user_id = int(user_id)
+    material_name = data['name']
+    existing_query = text("SELECT material_id, is_active FROM raw_materials WHERE user_id = :user_id AND lower(name) = lower(:name)")
+    try:
+        with engine.connect() as connection:
+            with connection.begin(): # Usar transacción
+                existing_result = connection.execute(existing_query, {"user_id": user_id, "name": material_name}).fetchone()
+
+                if existing_result:
+                    material_id, is_active = existing_result
+                    if is_active:
+                        return False, f"Error: El insumo '{material_name}' ya existe."
+                    else:
+                        # Reactivar
+                        reactivate_raw_material(material_id, user_id) # Usar la función separada
+                        return True, f"Insumo '{material_name}' reactivado exitosamente."
+
+                # Si no existe, insertarlo
+                insert_query = text("""
+                    INSERT INTO raw_materials (name, unit_measure, current_stock, average_cost, alert_threshold, user_id, is_active)
+                    VALUES (:name, :unit_measure, :current_stock, :average_cost, :alert_threshold, :user_id, :is_active)
+                """)
+                connection.execute(insert_query, {**data, "user_id": user_id})
+                # Commit es automático
+
+            return True, f"Insumo '{data['name']}' guardado exitosamente."
+
+    except Exception as e:
+        print(f"Error en add_raw_material: {e}")
+        return False, "Error al guardar/reactivar el insumo en la base de datos."
+
+def add_material_purchase(data, user_id):
+    """Registra una compra de materia prima y actualiza stock/costo promedio."""
+    user_id = int(user_id)
+    material_id = int(data['material_id'])
+    quantity_purchased = float(data['quantity_purchased'])
+    total_cost = float(data['total_cost'])
+    purchase_date = data['purchase_date'] # Debe ser datetime
+
+    if quantity_purchased <= 0 or total_cost < 0:
+        return False, "Cantidad comprada debe ser positiva y costo total no puede ser negativo."
+
+    cost_per_unit_purchased = total_cost / quantity_purchased if quantity_purchased > 0 else 0
+
+    try:
+        with engine.connect() as connection:
+            with connection.begin(): # Usar transacción
+                # 1. Obtener stock y costo promedio actual (bloquear fila)
+                get_material_query = text("""
+                    SELECT current_stock, average_cost FROM raw_materials
+                    WHERE material_id = :material_id AND user_id = :user_id FOR UPDATE
+                """)
+                current_material = connection.execute(
+                    get_material_query,
+                    {"material_id": material_id, "user_id": user_id}
+                ).fetchone()
+
+                if not current_material:
+                    raise ValueError(f"No se encontró el insumo con ID {material_id}.")
+
+                current_stock = float(current_material[0])
+                current_average_cost = float(current_material[1])
+
+                # 2. Calcular nuevo stock y nuevo costo promedio ponderado
+                new_stock = current_stock + quantity_purchased
+                if new_stock > 0:
+                    new_average_cost = ((current_stock * current_average_cost) + total_cost) / new_stock
+                else:
+                    new_average_cost = cost_per_unit_purchased
+
+                # 3. Actualizar stock y costo promedio en raw_materials
+                update_material_query = text("""
+                    UPDATE raw_materials
+                    SET current_stock = :new_stock, average_cost = :new_average_cost
+                    WHERE material_id = :material_id AND user_id = :user_id
+                """)
+                connection.execute(update_material_query, {
+                    "new_stock": new_stock,
+                    "new_average_cost": new_average_cost,
+                    "material_id": material_id,
+                    "user_id": user_id
+                })
+
+                # 4. Insertar el registro de la compra
+                insert_purchase_query = text("""
+                    INSERT INTO material_purchases
+                    (material_id, quantity_purchased, total_cost, purchase_date, supplier, notes, user_id)
+                    VALUES
+                    (:material_id, :quantity_purchased, :total_cost, :purchase_date, :supplier, :notes, :user_id)
+                """)
+                connection.execute(insert_purchase_query, {
+                    "material_id": material_id,
+                    "quantity_purchased": quantity_purchased,
+                    "total_cost": total_cost,
+                    "purchase_date": purchase_date,
+                    "supplier": data.get('supplier'),
+                    "notes": data.get('notes'),
+                    "user_id": user_id
+                })
+                # Commit automático
+
+            return True, "Compra registrada y stock actualizado exitosamente."
+
+    except ValueError as ve:
+         print(f"Error en add_material_purchase: {ve}")
+         return False, str(ve)
+    except Exception as e:
+        print(f"Error general en add_material_purchase: {e}")
+        return False, "Error al registrar la compra en la base de datos."
+
+def update_raw_material(material_id, data, user_id):
+    """Actualiza los datos de una materia prima (nombre, unidad, umbral)."""
+    allowed_updates = {'name': data.get('name'),
+                       'unit_measure': data.get('unit_measure'),
+                       'alert_threshold': float(data.get('alert_threshold', 0))}
+    if not allowed_updates['name'] or not allowed_updates['unit_measure']:
+        raise ValueError("Nombre y Unidad de Medida no pueden estar vacíos.")
+    if allowed_updates['alert_threshold'] < 0:
+         raise ValueError("Umbral de alerta no puede ser negativo.")
+
+    with engine.connect() as connection:
+        # Verificar si el nuevo nombre ya existe (y no es el material actual)
+        check_name_query = text("""
+            SELECT material_id FROM raw_materials
+            WHERE user_id = :user_id AND lower(name) = lower(:name) AND material_id != :material_id AND is_active = TRUE
+        """)
+        existing = connection.execute(check_name_query, {
+            "user_id": int(user_id),
+            "name": allowed_updates['name'],
+            "material_id": int(material_id)
+        }).fetchone()
+        if existing:
+            raise ValueError(f"Ya existe otro insumo activo con el nombre '{allowed_updates['name']}'.")
+
+        query = text("""
+            UPDATE raw_materials
+            SET name = :name, unit_measure = :unit_measure, alert_threshold = :alert_threshold
+            WHERE material_id = :material_id AND user_id = :user_id
+        """)
+        connection.execute(query, {
+            **allowed_updates,
+            "material_id": int(material_id),
+            "user_id": int(user_id)
+        })
+        connection.commit()
+
+def delete_raw_material(material_id, user_id):
+    """Borrado suave de materia prima."""
+    with engine.connect() as connection:
+        query = text("UPDATE raw_materials SET is_active = FALSE WHERE material_id = :material_id AND user_id = :user_id")
+        connection.execute(query, {"material_id": int(material_id), "user_id": int(user_id)})
+        connection.commit()
+
+def reactivate_raw_material(material_id, user_id):
+    """Reactiva una materia prima marcada como inactiva."""
+    with engine.connect() as connection:
+        query = text("UPDATE raw_materials SET is_active = TRUE WHERE material_id = :material_id AND user_id = :user_id")
+        connection.execute(query, {"material_id": int(material_id), "user_id": int(user_id)})
+        connection.commit()
+
+# database.py
+# ... (importaciones y código existente) ...
+
+# --- NUEVAS FUNCIONES: VINCULACIÓN PRODUCTOS <-> MATERIALES ---
+# database.py
+# ... (importaciones y código existente) ...
+
+# --- NUEVAS FUNCIONES: VINCULACIÓN PRODUCTOS <-> MATERIALES ---
+
+# EN database.py: REEMPLAZA esta función
+
+def get_linked_material_quantities(connection, product_id, user_id):
+    """
+    Devuelve un diccionario {material_id: quantity_used}
+    para un producto específico, USANDO UNA CONEXIÓN EXISTENTE.
+    """
+    query = text("""
+        SELECT pm.material_id, pm.quantity_used
+        FROM product_materials pm
+        JOIN raw_materials rm ON pm.material_id = rm.material_id
+        WHERE pm.product_id = :product_id AND pm.user_id = :user_id
+          AND rm.is_active = TRUE
+    """)
+    params = {"product_id": int(product_id), "user_id": int(user_id)}
+    linked_materials = {}
+    try:
+        # Ya no usa 'with engine.connect()', usa la conexión pasada
+        result = connection.execute(query, params).fetchall()
+        linked_materials = {int(row[0]): float(row[1]) for row in result}
+    except Exception as e:
+        print(f"Error en get_linked_material_quantities para product_id {product_id}: {e}")
+    return linked_materials # Devuelve diccionario vacío si hay error o no hay links
+# EN database.py: REEMPLAZA esta función
+
+def save_product_materials(connection, product_id, material_data_dict, user_id):
+    """
+    Guarda la relación entre un producto y sus materiales/cantidades.
+    ASUME que se ejecuta dentro de una transacción en la 'connection' dada.
+    Elevará una excepción si falla, para que la transacción haga rollback.
+    """
+    product_id = int(product_id)
+    user_id = int(user_id)
+
+    # Validar
+    if any(qty <= 0 for qty in material_data_dict.values()):
+        raise ValueError("Las cantidades de insumos deben ser positivas.")
+
+    try:
+        # 1. Borrar vinculaciones antiguas
+        delete_query = text("DELETE FROM product_materials WHERE product_id = :product_id AND user_id = :user_id")
+        connection.execute(delete_query, {"product_id": product_id, "user_id": user_id})
+
+        # 2. Insertar nuevas vinculaciones
+        if material_data_dict:
+            insert_query = text("""
+                INSERT INTO product_materials (product_id, material_id, quantity_used, user_id)
+                VALUES (:product_id, :material_id, :quantity_used, :user_id)
+            """)
+            insert_params = [{"product_id": product_id, "material_id": int(mat_id), "quantity_used": float(qty), "user_id": user_id}
+                             for mat_id, qty in material_data_dict.items()]
+            connection.execute(insert_query, insert_params)
+        
+        # Devolver éxito si todo fue bien
+        return True, "Vinculación de insumos guardada."
+
+    except Exception as e:
+        print(f"Error en save_product_materials (interno) para product_id {product_id}: {e}")
+        # Devolver Falso y el mensaje de error
+        return False, f"Error al guardar la vinculación de insumos: {e}"
+# --- Opcional: Función para calcular costo total de materiales ---
+def calculate_material_cost_for_product(product_id, user_id):
+    """Calcula el costo total de los materiales vinculados a un producto."""
+    linked_mats = get_linked_material_quantities(product_id, user_id)
+    if not linked_mats:
+        return 0.0 # Si no hay materiales vinculados, el costo de material es 0
+
+    material_ids = list(linked_mats.keys())
+    if not material_ids: return 0.0
+
+    # Obtener costos promedio de los materiales necesarios
+    cost_query = text("SELECT material_id, average_cost FROM raw_materials WHERE material_id = ANY(:ids) AND user_id = :user_id")
+    params = {"ids": material_ids, "user_id": int(user_id)}
+    total_material_cost = 0.0
+    try:
+        with engine.connect() as connection:
+            cost_results = connection.execute(cost_query, params).fetchall()
+            costs_map = {int(row[0]): float(row[1]) for row in cost_results}
+
+            # Calcular costo total sumando (cantidad_usada * costo_promedio)
+            for mat_id, quantity_used in linked_mats.items():
+                avg_cost = costs_map.get(mat_id, 0.0) # Usar 0 si el material no se encontró (raro)
+                total_material_cost += quantity_used * avg_cost
+    except Exception as e:
+         print(f"Error calculando costo material para product {product_id}: {e}")
+         return 0.0 # Devolver 0 en caso de error
+
+    return total_material_cost
+
+# --- AÑADIR ESTA NUEVA FUNCIÓN EN database.py ---
+
+def get_material_costs_map(user_id, material_ids):
+    """
+    Devuelve un diccionario {material_id: average_cost} para una lista de IDs.
+    """
+    if not material_ids:
+        return {}
+    
+    # Asegurarse que los IDs sean enteros
+    ids_int = [int(i) for i in material_ids]
+    
+    query = text("SELECT material_id, average_cost FROM raw_materials WHERE material_id = ANY(:ids) AND user_id = :user_id")
+    params = {"ids": ids_int, "user_id": int(user_id)}
+    costs_map = {}
+    try:
+        with engine.connect() as connection:
+            result = connection.execute(query, params).fetchall()
+            costs_map = {int(row[0]): float(row[1]) for row in result}
+    except Exception as e:
+        print(f"Error en get_material_costs_map: {e}")
+    return costs_map
+
+# --- AÑADIR ESTA NUEVA FUNCIÓN AL FINAL DE database.py ---
+
+def deduct_materials_for_production(connection, product_id, quantity_produced, user_id):
+    """
+    Intenta deducir los insumos necesarios para 'quantity_produced' de un 'product_id'.
+    Debe ejecutarse DENTRO de una transacción existente.
+    Devuelve (True, "Éxito") o (False, "Mensaje de Error").
+    """
+    user_id = int(user_id)
+    product_id = int(product_id)
+    quantity_produced = float(quantity_produced)
+
+    
+    # 1. Obtener los insumos y cantidades necesarias para 1 producto
+    linked_mats = get_linked_material_quantities(connection, product_id, user_id)
+    if not linked_mats:
+        return True, "El producto no tiene insumos vinculados." # Éxito, nada que hacer
+
+    material_ids = list(linked_mats.keys())
+    
+    # 2. Obtener el stock actual de esos insumos, BLOQUEANDO las filas
+    stock_query = text("""
+        SELECT material_id, name, current_stock 
+        FROM raw_materials 
+        WHERE material_id = ANY(:ids) AND user_id = :user_id 
+        FOR UPDATE
+    """)
+    stock_results = connection.execute(stock_query, {"ids": material_ids, "user_id": user_id}).fetchall()
+    stock_map = {int(row[0]): (row[1], float(row[2])) for row in stock_results} # {id: (nombre, stock)}
+
+    # 3. Comprobar si hay stock suficiente para TODO
+    updates_to_make = []
+    for mat_id, qty_used_per_product in linked_mats.items():
+        total_needed = qty_used_per_product * quantity_produced
+        
+        if mat_id not in stock_map:
+            return False, f"Error: El insumo ID {mat_id} no fue encontrado."
+        
+        mat_name, available_stock = stock_map[mat_id]
+        
+        if total_needed > available_stock:
+            return False, f"Stock insuficiente para '{mat_name}'. Necesario: {total_needed}, Disponible: {available_stock}"
+        
+        updates_to_make.append({'material_id': mat_id, 'new_stock': available_stock - total_needed})
+    
+    # 4. Si todas las comprobaciones pasan, ejecutar las actualizaciones
+    if not updates_to_make:
+        return True, "No se necesitaron actualizaciones de insumos."
+
+    update_query = text("""
+        UPDATE raw_materials SET current_stock = :new_stock 
+        WHERE material_id = :material_id AND user_id = :user_id
+    """)
+    
+    # Añadir user_id a cada diccionario de parámetros
+    final_params = [{**upd, 'user_id': user_id} for upd in updates_to_make]
+    
+    connection.execute(update_query, final_params)
+    return True, "Stock de insumos deducido exitosamente."

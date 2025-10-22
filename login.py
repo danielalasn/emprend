@@ -71,13 +71,12 @@ def register_login_callbacks(app):
 
         # Retornamos 3 valores (url, login_alert, subscription_alert)
         no_url_update = dash.no_update
-        no_sub_alert = None
 
         if not user:
-            return no_url_update, dbc.Alert("Usuario o contraseña incorrectos.", color="danger", dismissable=True), no_sub_alert
+            return no_url_update, dbc.Alert("Usuario o contraseña incorrectos.", color="danger", dismissable=True)
 
         if user.is_blocked:
-            return no_url_update, dbc.Alert("Tu cuenta ha sido bloqueada. Contacta al administrador.", color="danger", dismissable=True), no_sub_alert
+            return no_url_update, dbc.Alert("Tu cuenta ha sido bloqueada. Contacta al administrador.", color="danger", dismissable=True)
 
         if user and check_password(user.password, password):
 
@@ -89,7 +88,7 @@ def register_login_callbacks(app):
             if not user.is_admin and user.subscription_end_date:
                 # 2. Verificar si está expirada
                 if today > user.subscription_end_date:
-                    return no_url_update, dbc.Alert("Tu suscripción ha expirado. Contacta al administrador.", color="warning", dismissable=True), no_sub_alert
+                    return no_url_update, dbc.Alert("Tu suscripción ha expirado. Contacta al administrador.", color="warning", dismissable=True)
                 # 3. Verificar si expira pronto (en 5 días o menos)
                 elif user.subscription_end_date <= today + timedelta(days=5):
                     days_left = (user.subscription_end_date - today).days
@@ -109,7 +108,7 @@ def register_login_callbacks(app):
             # Al redirigir a la app principal, mostramos la alerta de suscripción
             return '/', None
         else:
-            return no_url_update, dbc.Alert("Usuario o contraseña incorrectos.", color="danger", dismissable=True), no_sub_alert
+            return no_url_update, dbc.Alert("Usuario o contraseña incorrectos.", color="danger", dismissable=True)
 
 
     # (update_password_callback sin cambios)
