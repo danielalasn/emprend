@@ -240,13 +240,29 @@ def register_callbacks(app):
         Output('categories-table-container', 'children'),
         Output('add-stock-product-dropdown', 'options'),
         Output('product-category-dropdown', 'options'),
-        [Input('product-sub-tabs', 'active_tab'),
-         Input('store-data-signal', 'data')]
+        [Input('product-sub-tabs', 'active_tab'), # Trigger 1
+         Input('store-data-signal', 'data')] # Trigger 2
     )
     def refresh_products_components(sub_tab, signal_data):
+        # --- START OPTIMIZATION ---
         if not current_user.is_authenticated:
             raise PreventUpdate
-        
+
+        # Check triggers: Only proceed if the signal changed,
+        # OR if the sub_tab input triggered.
+        # (We assume this callback should always run when the sub_tab changes
+        # within the Products main tab, so no extra check needed here like in Sales)
+        triggered_id = dash.callback_context.triggered_id
+        if not triggered_id: # Initial load
+             pass # Allow initial load
+        # No specific PreventUpdate needed here based only on trigger,
+        # as changing the sub-tab *should* trigger this refresh.
+        # --- END OPTIMIZATION ---
+
+        user_id = current_user.id
+        products_df = load_products(user_id)
+        # ... rest of the function (including the logic that uses sub_tab
+        #     to decide whether to render products_table or categories_table)...
         user_id = current_user.id
         # Cargamos todos los productos y categorías una vez
         products_df = load_products(user_id)
