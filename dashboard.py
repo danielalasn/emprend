@@ -50,11 +50,26 @@ def get_layout():
             dbc.Col(dcc.Graph(id="profit-vs-cogs-chart"), width=4),
         ], className="mt-4"),
         dbc.Row([
-            dbc.Col(dcc.Graph(id="chart-sales-by-product"), width=12),
+            dbc.Col(
+                # --- INICIO CORRECCIÓN: Div para Scroll ---
+                html.Div(
+                    dcc.Graph(id="chart-sales-by-product"),
+                    style={'overflowX': 'auto', 'width': '100%'}
+                ),
+                # --- FIN CORRECCIÓN ---
+                width=6
+            ),
+            dbc.Col(
+                # --- INICIO CORRECCIÓN: Div para Scroll ---
+                html.Div(
+                    dcc.Graph(id="revenue-by-category-chart"),
+                    style={'overflowX': 'auto', 'width': '100%'}
+                ),
+                # --- FIN CORRECCIÓN ---
+                width=6
+            ),
         ], className="mt-4"),
-        dbc.Row([
-            dbc.Col(dcc.Graph(id="revenue-by-category-chart"), width=12),
-        ], className="mt-4"),
+
         dbc.Row([dbc.Col(dcc.Graph(id="sales-over-time-chart"), width=12)], className="mt-4")
     ])
 
@@ -112,42 +127,76 @@ def register_callbacks(app):
         
         if not merged_df.empty:
             revenue_by_product = merged_df.groupby('name')['total_amount'].sum().reset_index()
-            fig_sales_by_prod = px.bar(revenue_by_product, x='name', y='total_amount', title="Ingresos por Producto",
-                                         labels={'name': 'Producto', 'total_amount': 'Ingresos'}, height=400)
-            fig_sales_by_prod.update_xaxes(categoryorder='total descending')
-            fig_sales_by_prod.update_layout(margin=dict(l=20, r=5, t=40, b=120), xaxis_tickangle=-45)
-
             merged_df_with_cat = pd.merge(merged_df, categories_df, on='category_id', how='left').rename(columns={'name_y': 'category_name'})
             revenue_by_category = merged_df_with_cat.groupby('category_name')['total_amount'].sum().reset_index()
+
+            # --- INICIO CORRECCIÓN ---
+            # 1. QUITAR cálculo de Y máximo. Cada gráfico tendrá su escala.
+
+            # 2. Calcular ancho mínimo para scroll (Aumentar un poco por etiqueta)
+            num_products = len(revenue_by_product)
+            num_categories = len(revenue_by_category)
+            # Aumentamos a 70px por barra para dar más espacio a etiquetas horizontales
+            min_width_prod = max(400, num_products * 70) 
+            min_width_cat = max(400, num_categories * 70) 
+
+            # 3. Crear y actualizar figura PRODUCTOS
+            fig_sales_by_prod = px.bar(revenue_by_product, x='name', y='total_amount', title="Ingresos por Producto",
+                                         labels={'name': 'Producto', 'total_amount': 'Ingresos'}, height=400)
+            fig_sales_by_prod.update_layout(
+                # QUITAR yaxis_range para escala automática
+                xaxis_tickangle=0, # Etiquetas horizontales
+                # Aumentar margen inferior para que quepan las etiquetas
+                margin=dict(l=20, r=20, t=40, b=80), 
+                xaxis={'categoryorder':'total descending'}, # Ordenar barras
+                width=min_width_prod # Establecer ancho para scroll
+            )
+            
+            # 4. Crear y actualizar figura CATEGORÍAS
             fig_revenue_by_cat = px.bar(revenue_by_category, x='category_name', y='total_amount', title="Ingresos por Categoría",
                                          labels={'category_name': 'Categoría', 'total_amount': 'Ingresos'}, height=400)
-            fig_revenue_by_cat.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+            fig_revenue_by_cat.update_layout(
+                # QUITAR yaxis_range para escala automática
+                xaxis_tickangle=0, # Etiquetas horizontales
+                # Aumentar margen inferior
+                margin=dict(l=20, r=20, t=40, b=80), 
+                width=min_width_cat # Establecer ancho para scroll
+            )
+            # --- FIN CORRECCIÓN ---
+
+            # ... (código del gráfico de línea) ...
             
             sales_by_day = merged_df.groupby(merged_df['sale_date'].dt.date)['total_amount'].sum().reset_index()
             fig_sales_over_time = px.line(sales_by_day, x='sale_date', y='total_amount', title='Ingresos por Día',
                                               labels={'sale_date': 'Fecha', 'total_amount': 'Ingresos'}, markers=True, height=400)
             fig_sales_over_time.update_xaxes(
-                tickformat="%Y-%m-%d",
-                rangeselector=dict(
-                    buttons=list([
-                        dict(count=1, label="1m", step="month", stepmode="backward"),
-                        dict(count=6, label="6m", step="month", stepmode="backward"),
-                        dict(count=1, label="YTD", step="year", stepmode="todate"),
-                        dict(step="all", label="Todo")
-                    ])
-                )
-            )
+                            rangeselector=dict(
+                                buttons=list([
+                                    dict(count=1, label="1m", step="month", stepmode="backward"),
+                                    dict(count=6, label="6m", step="month", stepmode="backward"),
+                                    dict(count=1, label="YTD", step="year", stepmode="todate"),
+                                    dict(step="all", label="Todo")
+                                ])
+                            )
+                        )
 
-        sales_monthly = sales_df.resample('ME', on='sale_date').agg(Ingresos=('total_amount', 'sum'), COGS=('cogs_total', 'sum')).reset_index()
-        sales_monthly['month'] = sales_monthly['sale_date'].dt.to_period('M')
-
+        # --- INICIO DE LA CORRECCIÓN ---
+        if not sales_df.empty:
+            sales_monthly = sales_df.resample('ME', on='sale_date').agg(Ingresos=('total_amount', 'sum'), COGS=('cogs_total', 'sum')).reset_index()
+            sales_monthly['month'] = sales_monthly['sale_date'].dt.to_period('M')
+        else:
+            # Si no hay ventas, crea un DataFrame vacío con las columnas esperadas
+            sales_monthly = pd.DataFrame(columns=['sale_date', 'Ingresos', 'COGS', 'month'])
+        # --- FIN DE LA CORRECCIÓN ---
+            
         expenses_monthly = pd.DataFrame()
         if not expenses_df.empty:
-            expense_cat_df = load_expense_categories(user_id)
-            if not expense_cat_df.empty:
-                expenses_with_names = pd.merge(expenses_df, expense_cat_df, on='expense_category_id', how='left')
-                expenses_monthly = expenses_with_names.resample('ME', on='expense_date').agg(Gastos=('amount', 'sum')).reset_index()
-                expenses_monthly['month'] = expenses_monthly['expense_date'].dt.to_period('M')
+            # Remuestrear gastos directamente. No necesitamos categorías para sumar el total.
+            expenses_monthly = expenses_df.resample('ME', on='expense_date').agg(Gastos=('amount', 'sum')).reset_index()
+            expenses_monthly['month'] = expenses_monthly['expense_date'].dt.to_period('M')
+        else:
+            # Si no hay gastos, crea un DataFrame vacío con las columnas esperadas
+            expenses_monthly = pd.DataFrame(columns=['expense_date', 'Gastos', 'month'])
 
         summary_df = pd.merge(sales_monthly, expenses_monthly, on='month', how='outer').fillna(0)
 

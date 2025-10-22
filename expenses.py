@@ -10,13 +10,18 @@ import dash
 from flask_login import current_user
 
 from app import app
-from database import load_expenses, load_expense_categories, get_expense_category_options, update_expense, delete_expense, delete_expense_category
+from database import (
+    load_expenses, load_expense_categories, get_expense_category_options, 
+    update_expense, delete_expense, delete_expense_category, 
+    reactivate_expense_category, update_expense_category
+)
 
 def get_layout():
     return html.Div([
         dcc.Store(id='store-expense-id-to-edit'),
         dcc.Store(id='store-expense-id-to-delete'),
         dcc.Store(id='store-expense-category-id-to-delete'),
+        dcc.Store(id='store-expense-category-id-to-edit'), # <-- Añadido
 
         dbc.Modal([
             dbc.ModalHeader("Editar Gasto"),
@@ -34,6 +39,19 @@ def get_layout():
             ]),
         ], id="expense-edit-modal", is_open=False),
 
+        # --- AÑADIDO: Modal para Editar Tipo de Gasto ---
+        dbc.Modal([
+            dbc.ModalHeader("Editar Tipo de Gasto"),
+            dbc.ModalBody(dbc.Form([
+                dbc.Label("Nombre del Tipo de Gasto"),
+                dbc.Input(id='edit-expense-category-name', type='text')
+            ])),
+            dbc.ModalFooter([
+                dbc.Button("Cancelar", id="cancel-edit-expense_category-button", color="secondary", className="ms-auto"),
+                dbc.Button("Guardar Cambios", id="save-edited-expense_category-button", color="primary"),
+            ]),
+        ], id="expense_category-edit-modal", is_open=False),
+
         dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación"),
             dbc.ModalBody("¿Estás seguro de que quieres eliminar este gasto?"),
@@ -45,7 +63,7 @@ def get_layout():
 
         dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación de Categoría"),
-            dbc.ModalBody("¿Estás seguro de que quieres eliminar este tipo de gasto? Se desasignará de todos los gastos asociados."),
+            dbc.ModalBody("¿Estás seguro de que quieres eliminar este tipo de gasto? Se ocultará de las listas y se desasignará de todos los gastos asociados."),
             dbc.ModalFooter([
                 dbc.Button("Cancelar", id="cancel-delete-expense_category-button", color="secondary", className="ms-auto"),
                 dbc.Button("Eliminar", id="confirm-delete-expense_category-button", color="danger"),
@@ -126,7 +144,6 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def add_expense(n, cat_id, amount, signal_data):
-        # ### CAMBIO: Se añade esta guarda para evitar la ejecución al cargar la página ###
         if n is None or n < 1:
             raise PreventUpdate
 
@@ -148,13 +165,17 @@ def register_callbacks(app):
         
         expense_cat_name = "Gasto"
         if cat_id:
-            cats = load_expense_categories(user_id)
-            if not cats[cats['expense_category_id'] == cat_id].empty:
-                expense_cat_name = cats[cats['expense_category_id'] == cat_id]['name'].iloc[0]
+            # Usamos la función que solo trae activos, pero está bien para esto
+            cats_df = pd.DataFrame(get_expense_category_options(user_id))
+            if not cats_df.empty:
+                match = cats_df[cats_df['value'] == cat_id]
+                if not match.empty:
+                    expense_cat_name = match['label'].iloc[0]
         
         new_signal = (signal_data or 0) + 1
         return dbc.Alert(f"Gasto de '{expense_cat_name}' por ${amount} guardado.", color="success", dismissable=True, duration=4000), new_signal
 
+    # --- CALLBACK CORREGIDO: AÑADIR CATEGORÍA (CON REACTIVACIÓN) ---
     @app.callback(
         Output('add-expense-category-alert', 'children'),
         Output('store-data-signal', 'data', allow_duplicate=True),
@@ -173,15 +194,33 @@ def register_callbacks(app):
             return dbc.Alert("El nombre no puede estar vacío.", color="warning"), dash.no_update
         
         from database import engine
+        
+        # Cargamos TODAS las categorías (activas e inactivas)
         existing_cats = load_expense_categories(user_id)
-        if name.lower() in existing_cats['name'].str.lower().tolist():
-            return dbc.Alert(f"El tipo de gasto '{name}' ya existe.", color="danger"), dash.no_update
+        
+        if not existing_cats.empty and 'is_active' in existing_cats.columns:
+            match = existing_cats[existing_cats['name'].str.lower() == name.lower()]
+            if not match.empty:
+                category_data = match.iloc[0]
+                
+                # Si existe Y está activa, mostrar error
+                if category_data['is_active']:
+                    return dbc.Alert(f"El tipo de gasto '{name}' ya existe.", color="danger"), dash.no_update
+                
+                # Si existe PERO está inactiva, reactivarla
+                else:
+                    reactivate_expense_category(category_data['expense_category_id'], user_id)
+                    new_signal = (signal_data or 0) + 1
+                    return dbc.Alert(f"Tipo de gasto '{category_data['name']}' reactivado.", color="success"), new_signal
 
+        # Si no existe (o si la columna 'is_active' aún no existe), crearla nueva
+        # 'is_active' se establecerá en TRUE por defecto en la BD
         pd.DataFrame([{'name': name.title(), 'user_id': user_id}]).to_sql('expense_categories', engine, if_exists='append', index=False)
         
         new_signal = (signal_data or 0) + 1
         return dbc.Alert(f"Tipo de gasto '{name.title()}' guardado.", color="success"), new_signal
 
+    # --- CALLBACK CORREGIDO: REFRESCAR TABLAS (CON FILTRO Y COLUMNA EDITAR) ---
     @app.callback(
         Output('expenses-table-container', 'children'),
         Output('expense-categories-table-container', 'children'),
@@ -196,15 +235,17 @@ def register_callbacks(app):
         
         user_id = current_user.id
         expenses_df = load_expenses(user_id)
-        exp_cat_df = load_expense_categories(user_id)
+        exp_cat_df = load_expense_categories(user_id) # Carga todas
 
         display_df = pd.DataFrame()
         if not expenses_df.empty:
             if not exp_cat_df.empty:
+                # Merge con todas las categorías (incl. inactivas) para mostrar nombres históricos
                 display_df = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left').rename(columns={'name': 'gasto'})
             else:
                 display_df = expenses_df
-                display_df['gasto'] = 'N/A'
+            
+            display_df['gasto'] = display_df['gasto'].fillna('Categoría Eliminada')
             display_df['expense_date'] = pd.to_datetime(display_df['expense_date'], format='mixed').dt.strftime('%Y-%m-%d %H:%M')
             display_df['editar'] = "✏️"
             display_df['eliminar'] = "🗑️"
@@ -225,16 +266,26 @@ def register_callbacks(app):
             style_cell_conditional=[{'if': {'column_id': 'editar'}, 'cursor': 'pointer'}, {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}]
         )
 
+        # Filtrar categorías inactivas de la tabla de "Gestionar"
+        if not exp_cat_df.empty and 'is_active' in exp_cat_df.columns:
+            exp_cat_df = exp_cat_df[exp_cat_df['is_active'] == True].copy()
+        
+        exp_cat_df['editar'] = "✏️" 
         exp_cat_df['eliminar'] = "🗑️"
+        
         expense_categories_table = dash_table.DataTable(
             id='expense-categories-table', 
             columns=[
                 {"name": "ID", "id": "expense_category_id"}, 
                 {"name": "Nombre", "id": "name"},
+                {"name": "Editar", "id": "editar"}, 
                 {"name": "Eliminar", "id": "eliminar"}
             ],
             data=exp_cat_df.to_dict('records'),
-            style_cell_conditional=[{'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}]
+            style_cell_conditional=[
+                {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'},
+                {'if': {'column_id': 'editar'}, 'cursor': 'pointer'} 
+            ]
         )
         
         return expenses_table, expense_categories_table, get_expense_category_options(user_id)
@@ -287,8 +338,11 @@ def register_callbacks(app):
         if not all(col in df.columns for col in required_columns):
             return dbc.Alert(f"El archivo debe contener las columnas: {', '.join(required_columns)}", color="danger"), dash.no_update
 
-        expense_cats_db = load_expense_categories(user_id)
-        expense_cats_lookup = expense_cats_db.set_index('name')['expense_category_id'].to_dict()
+        # Usamos la función que solo trae categorías activas
+        expense_cats_db = pd.DataFrame(get_expense_category_options(user_id))
+        expense_cats_lookup = {}
+        if not expense_cats_db.empty:
+             expense_cats_lookup = expense_cats_db.set_index('label')['value'].to_dict()
 
         expenses_to_insert = []
         for index, row in df.iterrows():
@@ -297,7 +351,7 @@ def register_callbacks(app):
             expense_date = row['Fecha de Gasto']
             
             if category_name not in expense_cats_lookup:
-                errors.append(f"Fila {index + 2}: El tipo de gasto '{category_name}' no existe en la base de datos.")
+                errors.append(f"Fila {index + 2}: El tipo de gasto '{category_name}' no existe o está inactivo en la base de datos.")
                 continue
             
             try: amount = float(amount)
@@ -338,6 +392,7 @@ def register_callbacks(app):
         Output('edit-expense-category', 'value'),
         Output('edit-expense-amount', 'value'),
         Output('edit-expense-date', 'date'),
+        Output('edit-expense-category', 'options'), # <-- Añadido
         Input('expenses-table', 'active_cell'),
         State('expenses-table', 'derived_virtual_data'),
         prevent_initial_call=True
@@ -357,16 +412,20 @@ def register_callbacks(app):
         expenses_df = load_expenses(user_id)
         expense_info = expenses_df[expenses_df['expense_id'] == expense_id].iloc[0]
 
+        # Preparamos las opciones del dropdown para el modal
+        category_options = get_expense_category_options(user_id)
+        no_update_list = [dash.no_update] * 4
+
         if column_id == "editar":
-            cat_val = int(expense_info['expense_category_id'])
+            cat_val = int(expense_info['expense_category_id']) if pd.notna(expense_info['expense_category_id']) else None
             amount_val = expense_info['amount']
             date_val = pd.to_datetime(expense_info['expense_date']).date()
-            return True, False, expense_id, None, cat_val, amount_val, date_val
+            return True, False, expense_id, None, cat_val, amount_val, date_val, category_options
         
         elif column_id == "eliminar":
-            return False, True, None, expense_id, dash.no_update, dash.no_update, dash.no_update
+            return False, True, None, expense_id, *no_update_list
 
-        return False, False, None, None, dash.no_update, dash.no_update, dash.no_update
+        return False, False, None, None, *no_update_list
 
     @app.callback(
         Output('expense-edit-modal', 'is_open', allow_duplicate=True),
@@ -413,22 +472,40 @@ def register_callbacks(app):
     def close_expense_modals(n_edit, n_delete):
         return False, False
 
+    # --- CALLBACK CORREGIDO: Abrir Modales de Edición/Eliminación de Categoría ---
     @app.callback(
+        Output('expense_category-edit-modal', 'is_open'),
+        Output('store-expense-category-id-to-edit', 'data'),
+        Output('edit-expense-category-name', 'value'),
         Output('expense_category-delete-confirm-modal', 'is_open'),
         Output('store-expense-category-id-to-delete', 'data'),
         Input('expense-categories-table', 'active_cell'),
         State('expense-categories-table', 'derived_virtual_data'),
         prevent_initial_call=True
     )
-    def open_expense_category_delete_modal(active_cell, data):
-        if not active_cell or 'row' not in active_cell or active_cell['column_id'] != 'eliminar':
+    def open_expense_category_modals(active_cell, data):
+        if not active_cell or 'row' not in active_cell:
             raise PreventUpdate
-        
+
         row_idx = active_cell['row']
+        col_id = active_cell['column_id']
+
         if not data or row_idx >= len(data):
             raise PreventUpdate
+            
         category_id = data[row_idx]['expense_category_id']
-        return True, category_id
+        category_info = data[row_idx]
+        
+        if col_id == 'editar':
+            # Abrir modal de edición y poblar datos
+            return True, category_id, category_info['name'], False, dash.no_update
+
+        elif col_id == 'eliminar':
+            # Abrir modal de eliminación
+            return False, dash.no_update, dash.no_update, True, category_id
+
+        # Si se hace clic en cualquier otra celda
+        return False, dash.no_update, dash.no_update, False, dash.no_update
 
     @app.callback(
         Output('expense_category-delete-confirm-modal', 'is_open', allow_duplicate=True),
@@ -439,6 +516,7 @@ def register_callbacks(app):
     )
     def confirm_delete_expense_category(n, category_id, signal):
         if not n or not category_id: raise PreventUpdate
+        # Llama a la función de borrado suave
         delete_expense_category(category_id, current_user.id)
         return False, (signal or 0) + 1
         
@@ -448,4 +526,30 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def close_expense_category_delete_modal(n):
+        return False
+        
+    # --- AÑADIDO: Callbacks para el nuevo modal de Edición de Categoría ---
+    @app.callback(
+        Output('expense_category-edit-modal', 'is_open', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('save-edited-expense_category-button', 'n_clicks'),
+        [State('store-expense-category-id-to-edit', 'data'), 
+         State('edit-expense-category-name', 'value'), 
+         State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def save_edited_expense_category(n, category_id, name, signal):
+        if n is None: raise PreventUpdate
+        if not category_id: raise PreventUpdate
+        
+        update_expense_category(category_id, {"name": name}, current_user.id)
+        
+        return False, (signal or 0) + 1
+
+    @app.callback(
+        Output('expense_category-edit-modal', 'is_open', allow_duplicate=True),
+        Input('cancel-edit-expense_category-button', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def close_expense_category_edit_modal(n):
         return False
