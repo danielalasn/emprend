@@ -79,15 +79,17 @@ def get_layout():
                         html.Div(id="add-expense-alert"),
                         dbc.Row([
                             dbc.Col([html.Label("Tipo de Gasto"), dcc.Dropdown(id='expense-category-dropdown', placeholder="Selecciona un tipo de gasto...")], width=6),
-                            dbc.Col([html.Label("Monto"), dbc.Input(id='expense-amount-input', type='number', min=0)], width=6),
+                            # --- CORRECCIÓN: 'value=0' eliminado y 'placeholder' añadido ---
+                            dbc.Col([html.Label("Monto"), dbc.Input(id='expense-amount-input', type='number', min=0, placeholder="0.00")], width=6),
                         ], className="mb-3"),
                         dbc.Button("Guardar Gasto", id="save-expense-button", color="danger", className="mt-3")
                     ])
                 ]),
 
                 dbc.Accordion([
+                    # --- CORRECCIÓN: 'children' envuelto en una lista [] ---
                     dbc.AccordionItem(
-                        [
+                        children=[
                             dcc.Upload(
                                 id='upload-expenses-data',
                                 children=html.Div(['Arrastra y suelta o ', html.A('Selecciona un Archivo')]),
@@ -98,6 +100,18 @@ def get_layout():
                                 },
                                 multiple=False
                             ),
+                            
+                            # --- CORRECCIÓN: Alerta con instrucciones y 'html.Li' corregidos ---
+                            dbc.Alert([
+                                html.H5("Formato Requerido:", className="alert-heading"),
+                                html.P("El archivo Excel debe tener las siguientes columnas (exactamente como se escriben):"),
+                                html.Ul([
+                                    html.Li([html.B("nombre"), " (El 'Tipo de Gasto' ya debe existir en tu lista de categorías)"]),
+                                    html.Li([html.B("monto"), " (El valor numérico del gasto)"]),
+                                    html.Li([html.B("fecha"), " (Formato AAAA-MM-DD o similar)"]),
+                                ]),
+                            ], color="info", className="mt-2"),
+                            
                             html.Div(id='upload-expenses-output')
                         ],
                         title="Importar Historial de Gastos desde Excel"
@@ -150,11 +164,13 @@ def register_callbacks(app):
         if not current_user.is_authenticated: raise PreventUpdate
 
         user_id = current_user.id
-        if not all([cat_id, amount]):
-            return dbc.Alert("Los campos Gasto y Monto son obligatorios.", color="danger"), dash.no_update
+        
+        # --- CORRECCIÓN: 'amount' puede ser None ---
+        if not cat_id or amount is None:
+            return dbc.Alert("Los campos Tipo de Gasto y Monto son obligatorios.", color="danger"), dash.no_update
         try:
-            amount = float(amount)
-            if amount <= 0:
+            amount_f = float(amount) if amount is not None else 0.0
+            if amount_f <= 0:
                  return dbc.Alert("El monto debe ser positivo.", color="danger"), dash.no_update
         except (ValueError, TypeError):
              return dbc.Alert("Monto no válido.", color="danger"), dash.no_update
@@ -165,7 +181,7 @@ def register_callbacks(app):
         pd.DataFrame([{
             'expense_date': current_time, # Guardar como datetime
             'expense_category_id': cat_id,
-            'amount': amount,
+            'amount': amount_f, # --- CORRECCIÓN: Usar la variable convertida
             'user_id': user_id
         }]).to_sql('expenses', engine, if_exists='append', index=False)
 
@@ -179,7 +195,7 @@ def register_callbacks(app):
                     expense_cat_name = match['label'].iloc[0]
 
         new_signal = (signal_data or 0) + 1
-        return dbc.Alert(f"Gasto de '{expense_cat_name}' por ${amount:,.2f} guardado.", color="success", dismissable=True, duration=4000), new_signal
+        return dbc.Alert(f"Gasto de '{expense_cat_name}' por ${amount_f:,.2f} guardado.", color="success", dismissable=True, duration=4000), new_signal
 
     # Callback añadir categoría (con reactivación)
     @app.callback(
@@ -357,7 +373,8 @@ def register_callbacks(app):
         except Exception as e:
             return dbc.Alert(f"Error al procesar el archivo: {e}", color="danger"), dash.no_update
 
-        required_columns = ['Tipo de Gasto', 'Monto', 'Fecha de Gasto']
+        # --- CORRECCIÓN: Nombres de columnas actualizados ---
+        required_columns = ['nombre', 'monto', 'fecha']
         errors = []
         if not all(col in df.columns for col in required_columns):
             return dbc.Alert(f"El archivo debe contener las columnas: {', '.join(required_columns)}", color="danger"), dash.no_update
@@ -370,9 +387,10 @@ def register_callbacks(app):
 
         expenses_to_insert = []
         for index, row in df.iterrows():
-            category_name = row['Tipo de Gasto']
-            amount = row['Monto']
-            expense_date = row['Fecha de Gasto']
+            # --- CORRECCIÓN: Acceder a 'row' con los nuevos nombres ---
+            category_name = row['nombre']
+            amount = row['monto']
+            expense_date = row['fecha']
 
             if category_name not in expense_cats_lookup:
                 errors.append(f"Fila {index + 2}: El tipo de gasto '{category_name}' no existe o está inactivo.")

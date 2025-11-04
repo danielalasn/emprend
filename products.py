@@ -61,10 +61,10 @@ def get_layout():
                 dbc.Label("Descripción", className="mt-2"),
                 dbc.Textarea(id='edit-product-desc'),
                 dbc.Row([
-                    dbc.Col([dbc.Label("Costo Base (Sin Insumos)"), dbc.Input(id='edit-product-cost', type='number', min=0, step=0.01)]),
-                    dbc.Col([dbc.Label("Precio Venta"), dbc.Input(id='edit-product-price', type='number', min=0, step=0.01)]),
-                    dbc.Col([dbc.Label("Stock Actual"), dbc.Input(id='edit-product-stock', type='number', min=0, step=1)]),
-                    dbc.Col([dbc.Label("Alerta Stock Bajo"), dbc.Input(id='edit-product-alert', type='number', min=0, step=1)]),
+                    dbc.Col([dbc.Label("Costo Base (Sin Insumos)"), dbc.Input(id='edit-product-cost', type='number', min=0, step="any", placeholder="0.00")]),
+                    dbc.Col([dbc.Label("Precio Venta"), dbc.Input(id='edit-product-price', type='number', min=0, step="any", placeholder="0.00")]),
+                    dbc.Col([dbc.Label("Stock Actual"), dbc.Input(id='edit-product-stock', type='number', min=0, step="any", placeholder="0.00")]),
+                    dbc.Col([dbc.Label("Alerta Stock Bajo"), dbc.Input(id='edit-product-alert', type='number', min=0, step="any", placeholder="0.00")]),
                 ], className="mt-2"),
                 html.Hr(),
                 html.H5("Insumos Utilizados", className="mt-3 mb-3"),
@@ -135,10 +135,10 @@ def get_layout():
                         ], className="mb-3"),
                         dbc.Row([dbc.Col(html.Div([html.Label("Descripción (Opcional)"), dbc.Textarea(id="product-desc-input")]), width=12)], className="mb-3"),
                         dbc.Row([
-                            dbc.Col(html.Div([html.Label("Costo Base"), dbc.Input(id="product-cost-input", type="number", min=0, step=0.01, value=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Precio Venta"), dbc.Input(id="product-price-input", type="number", min=0, step=0.01)]), width=3),
-                            dbc.Col(html.Div([html.Label("Stock Inicial"), dbc.Input(id="product-stock-input", type="number", min=0, step=1, value=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Alerta Stock"), dbc.Input(id="product-alert-input", type="number", min=0, step=1, value=5)]), width=3),
+                            dbc.Col(html.Div([html.Label("Costo Base"), dbc.Input(id="product-cost-input", type="number", min=0, step="any", placeholder="0.00")]), width=3),
+                            dbc.Col(html.Div([html.Label("Precio Venta"), dbc.Input(id="product-price-input", type="number", min=0, step="any", placeholder="0.00")]), width=3),
+                            dbc.Col(html.Div([html.Label("Stock Inicial"), dbc.Input(id="product-stock-input", type="number", min=0, step="any", placeholder="0.00")]), width=3),
+                            dbc.Col(html.Div([html.Label("Alerta Stock"), dbc.Input(id="product-alert-input", type="number", min=0, step="any", placeholder="0.00" )]), width=3),
                         ], className="mb-3"),
                         html.Hr(), html.H4("Insumos Utilizados", className="mt-4 mb-3"),
                         dbc.Row([
@@ -161,7 +161,7 @@ def get_layout():
                         html.H3("Añadir Stock Producto Existente"), html.Div(id="add-stock-alert"),
                         dbc.Row([
                             dbc.Col([html.Label("Producto"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona...")], width=6),
-                            dbc.Col([html.Label("Cantidad a Añadir"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1)], width=6),
+                            dbc.Col([html.Label("Cantidad a Añadir"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step="any", placeholder="0.00")], width=6),
                         ], className="mb-3"),
                         dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3")
                     ])
@@ -257,8 +257,6 @@ def register_callbacks(app):
              # --- FIX AttributeError: Retornar 2 valores ---
              return dbc.Alert(alert_content, color="danger"), dash.no_update
         # --- FIN RECOGER CANTIDADES Y VALIDAR ---
-
-        # EN products.py, DENTRO DE add_product
 
     # ... (justo después del bloque "FIN RECOGER CANTIDADES Y VALIDAR") ...
 
@@ -539,22 +537,49 @@ def register_callbacks(app):
         except IndexError: raise PreventUpdate
         category_options = get_category_options(user_id); material_options = get_raw_material_options(user_id)
         # ... (código existente) ...
+# --- INICIO DEL NUEVO BLOQUE (EL CORRECTO) ---
         linked_material_quantities = {}; linked_material_ids = []
+        calculated_base_cost = 0.0
+        # Obtener el Costo TOTAL de la BD
+        total_cost_from_db = float(product_info['cost']) 
+
         try:
-             # --- INICIO DE MODIFICACIÓN ---
-             with engine.connect() as connection:
-                 linked_material_quantities = get_linked_material_quantities(connection, product_id, user_id)
-             # --- FIN DE MODIFICACIÓN ---
-             linked_material_ids = list(linked_material_quantities.keys())
-        except Exception as e: print(f"Error al cargar materiales vinculados para {product_id}: {e}")
+            # 1. Obtener los insumos vinculados
+            with engine.connect() as connection:
+                linked_material_quantities = get_linked_material_quantities(connection, product_id, user_id) # Devuelve {int: float}
+            
+            linked_material_ids = list(linked_material_quantities.keys())
+            
+            total_insumos_cost = 0.0
+            if linked_material_ids:
+                # 2. Obtener el costo actual de esos insumos
+                costs_map = get_material_costs_map(user_id, linked_material_ids) # Devuelve {int: float}
+                
+                # 3. Calcular el costo total de los insumos
+                for mat_id, qty in linked_material_quantities.items():
+                    total_insumos_cost += costs_map.get(mat_id, 0.0) * qty
+            
+            # 4. Calcular el Costo Base restando
+            calculated_base_cost = total_cost_from_db - total_insumos_cost
+            # Asegurarse de que no sea negativo si los costos de insumos han subido
+            if calculated_base_cost < 0:
+                calculated_base_cost = 0.0 
 
+        except Exception as e: 
+            print(f"Error al calcular costos de materiales vinculados para {product_id}: {e}")
+            # Si falla, mostrar el costo total como fallback
+            calculated_base_cost = total_cost_from_db 
 
-        no_update_list = [dash.no_update] * 11 # 15 outputs total
+        no_update_list = [dash.no_update] * 11
+        # --- FIN DEL NUEVO BLOQUE ---
 
         if col_id == "editar":
             cat_val = int(product_info['category_id']) if pd.notna(product_info['category_id']) else None
             return (True, False, product_id, None, product_info['name'], cat_val,
-                    product_info['description'], product_info['cost'], product_info['price'],
+                    product_info['description'], 
+                    round(calculated_base_cost, 2), # <-- ESTA ES LA LÍNEA MODIFICADA
+                    product_info['price'],
+                    # ... (el resto de la línea sigue igual)
                     product_info['stock'], product_info['alert_threshold'],
                     category_options, material_options, linked_material_ids,
                     linked_material_quantities) # 15 outputs

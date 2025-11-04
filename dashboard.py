@@ -9,13 +9,15 @@ from datetime import date, timedelta
 from flask_login import current_user
 
 from app import app
-from database import load_products, load_categories, load_expense_categories, calculate_financials
+# EN dashboard.py
+from database import load_products, load_categories, load_expense_categories, calculate_financials, load_raw_materials
 
 today = date.today()
 start_of_month = today.replace(day=1)
 
 def get_layout():
     return html.Div(className="p-4", children=[
+        # --- FILA 1: FILTRO DE FECHA (Sin cambios) ---
         dbc.Row([
             dbc.Col(html.H4("Filtrar por Fecha:"), width='auto'),
             dbc.Col(
@@ -34,63 +36,72 @@ def get_layout():
                 ),
             width="auto")
         ], align="center", className="mb-4"),
+
+        # --- FILA 2: KPIs FINANCIEROS (Reorganizada) ---
         dbc.Row([
-            dbc.Col([
-                dbc.Row([
-                    # --- Force line breaks in H4 titles ---
-                    dbc.Col(dbc.Card(dbc.CardBody([
-                        # Replace string with list + html.Br()
-                        html.H4(["Ingresos", html.Br(), "Totales"], className="card-title"),
-                        html.H2(id="kpi-total-revenue", style={'fontSize': '1.5rem'}) # Removed mt-auto/flex-grow-1
-                    ]), # Removed flex classes from CardBody
-                    style={'height': '120px'}), width=3),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.H4(["Ingresos", html.Br(), "Totales"], className="card-title"),
+                html.H2(id="kpi-total-revenue", style={'fontSize': '1.5rem'})
+            ]), style={'height': '120px'}), width=4),
 
-                    dbc.Col(dbc.Card(dbc.CardBody([
-                        # Replace string with list + html.Br()
-                        html.H4(["Ganancia", html.Br(), "Bruta"], className="card-title"),
-                        html.H2(id="kpi-gross-profit", style={'fontSize': '1.5rem'}) # Removed mt-auto/flex-grow-1
-                    ]), # Removed flex classes from CardBody
-                    style={'height': '120px'}), width=3),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.H4(["Ganancia", html.Br(), "Bruta"], className="card-title"),
+                html.H2(id="kpi-gross-profit", style={'fontSize': '1.5rem'})
+            ]), style={'height': '120px'}), width=4),
 
-                    dbc.Col(dbc.Card(dbc.CardBody([
-                         # Replace string with list + html.Br()
-                        html.H4(["Ganancia", html.Br(), "Neta"], className="card-title"),
-                        html.H2(id="kpi-net-profit", style={'fontSize': '1.5rem'}) # Removed mt-auto/flex-grow-1
-                    ]), # Removed flex classes from CardBody
-                    style={'height': '120px'}), width=3),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.H4(["Ganancia", html.Br(), "Neta"], className="card-title"),
+                html.H2(id="kpi-net-profit", style={'fontSize': '1.5rem'})
+            ]), style={'height': '120px'}), width=4),
+        ], className="mb-4"), # Se añade margen inferior
 
-                    dbc.Col(dbc.Card(dbc.CardBody([
-                         # Replace string with list + html.Br()
-                        html.H4(["Inversión", html.Br(), "(Stock)"], className="card-title"),
-                        html.H2(id="kpi-total-investment", style={'fontSize': '1.5rem'}) # Removed mt-auto/flex-grow-1
-                    ]), # Removed flex classes from CardBody
-                    style={'height': '120px'}), width=3),
-                    # --- End forced line breaks ---
-                ])
-            ], width=8),
-            dbc.Col(dbc.Card([dbc.CardHeader("Alertas de Stock Bajo"), dbc.CardBody(id="low-stock-alerts", style={"maxHeight": "95px", "overflowY": "auto"})]), width=4),
-        ], align="center"),
+        # --- FILA 3: KPIs DE INVENTARIO Y ALERTAS (Nueva fila) ---
+        dbc.Row([
+            # KPI Inversión Productos (ID actualizado)
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.H4(["Inversión", html.Br(), "(Productos)"], className="card-title"),
+                html.H2(id="kpi-product-investment", style={'fontSize': '1.5rem'})
+            ]), style={'height': '120px'}), width=3),
+
+            # KPI Inversión Insumos (NUEVO)
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.H4(["Inversión", html.Br(), "(Insumos)"], className="card-title"),
+                html.H2(id="kpi-material-investment", style={'fontSize': '1.5rem'})
+            ]), style={'height': '120px'}), width=3),
+
+            # Alertas Productos (ID actualizado)
+            dbc.Col(dbc.Card([
+                dbc.CardHeader("Alertas (Productos)"), 
+                dbc.CardBody(id="low-stock-alerts-products", style={"maxHeight": "80px", "overflowY": "auto"})
+            ]), width=3),
+
+            # Alertas Insumos (NUEVO)
+            dbc.Col(dbc.Card([
+                dbc.CardHeader("Alertas (Insumos)"), 
+                dbc.CardBody(id="low-stock-alerts-materials", style={"maxHeight": "80px", "overflowY": "auto"})
+            ]), width=3),
+        ], align="stretch"), # 'align="stretch"' hace que las tarjetas tengan la misma altura
+
+        # --- FILA 4: GRÁFICOS (Sin cambios) ---
         dbc.Row([
             dbc.Col(dcc.Graph(id="monthly-summary-chart"), width=8),
             dbc.Col(dcc.Graph(id="waterfall-profit-summary"), width=4),
         ], className="mt-4"),
+        
+        # --- FILAS 5 y 6: GRÁFICOS (Sin cambios) ---
         dbc.Row([
             dbc.Col(
-                # --- INICIO CORRECCIÓN: Div para Scroll ---
                 html.Div(
                     dcc.Graph(id="chart-sales-by-product"),
                     style={'overflowX': 'auto', 'width': '100%'}
                 ),
-                # --- FIN CORRECCIÓN ---
                 width=6
             ),
             dbc.Col(
-                # --- INICIO CORRECCIÓN: Div para Scroll ---
                 html.Div(
                     dcc.Graph(id="revenue-by-category-chart"),
                     style={'overflowX': 'auto', 'width': '100%'}
                 ),
-                # --- FIN CORRECCIÓN ---
                 width=6
             ),
         ], className="mt-4"),
@@ -107,10 +118,15 @@ import plotly.graph_objects as go # Asegúrate de que go esté importado
 def register_callbacks(app):
     @app.callback(
         # --- CORREGIDO: Cambiado Output del pie chart al waterfall chart ---
-        Output('kpi-total-revenue', 'children'), Output('kpi-gross-profit', 'children'),
-        Output('kpi-net-profit', 'children'), Output('kpi-total-investment', 'children'),
-        Output('low-stock-alerts', 'children'), Output('monthly-summary-chart', 'figure'),
-        Output('waterfall-profit-summary', 'figure'), # <-- Cambiado ID
+        Output('kpi-total-revenue', 'children'), 
+        Output('kpi-gross-profit', 'children'),
+        Output('kpi-net-profit', 'children'),
+        Output('kpi-product-investment', 'children'),   # <-- CORREGIDO
+        Output('kpi-material-investment', 'children'),  # <-- NUEVO
+        Output('low-stock-alerts-products', 'children'), # <-- CORREGIDO
+        Output('low-stock-alerts-materials', 'children'), # <-- NUEVO
+        Output('monthly-summary-chart', 'figure'),
+        Output('waterfall-profit-summary', 'figure'), 
         Output('chart-sales-by-product', 'figure'),
         Output('revenue-by-category-chart', 'figure'),
         Output('sales-over-time-chart', 'figure'),
@@ -140,7 +156,8 @@ def register_callbacks(app):
         products_df = load_products(user_id)
         categories_df = load_categories(user_id)
         products_with_cat_names = pd.merge(products_df, categories_df, on='category_id', how='left')
-        total_investment = (products_with_cat_names['cost'] * products_with_cat_names['stock']).sum() if not products_with_cat_names.empty else 0
+        # --- LÍNEA CORREGIDA ---
+        total_product_investment = (products_with_cat_names['cost'] * products_with_cat_names['stock']).sum() if not products_with_cat_names.empty else 0
 
 # --- Waterfall Chart ---
 # --- Waterfall Chart ---
@@ -337,11 +354,45 @@ def register_callbacks(app):
             fig_monthly.update_xaxes(type='category')
 
         # Alertas de Stock Bajo (sin cambios)
-        low_stock_products = products_df[products_df['stock'] <= products_df['alert_threshold']]
-        alerts = dbc.ListGroupItem("¡Todo en orden!", color="success") if low_stock_products.empty else \
-                 dbc.ListGroup([dbc.ListGroupItem(f"{row['name']} (Stock: {row['stock']})", color="danger") for _, row in low_stock_products.iterrows()])
+        low_stock_products = products_df[
+            (products_df['stock'] <= products_df['alert_threshold']) & 
+            (products_df['alert_threshold'] > 0)
+        ]
+        product_alerts = dbc.ListGroupItem("¡Todo en orden!", color="success") if low_stock_products.empty else \
+                        dbc.ListGroup([dbc.ListGroupItem(f"{row['name']} (Stock: {row['stock']})", color="danger") for _, row in low_stock_products.iterrows()])
 
-        # --- CORREGIDO: Devolver fig_waterfall en lugar de fig_profit_pie ---
-        return (f"${total_revenue:,.2f}", f"${gross_profit:,.2f}", f"${net_profit:,.2f}",
-                f"${total_investment:,.2f}", alerts, fig_monthly, fig_waterfall, # <-- Cambiado aquí
-                    fig_sales_by_prod, fig_revenue_by_cat, fig_sales_over_time, date_picker_disabled)
+        raw_materials_df = load_raw_materials(user_id)
+        total_material_investment = 0
+        material_alerts = dbc.ListGroupItem("¡Todo en orden!", color="success")
+
+        if not raw_materials_df.empty:
+            # Inversión en Insumos
+            raw_materials_df['valor_stock'] = raw_materials_df['current_stock'] * raw_materials_df['average_cost']
+            total_material_investment = raw_materials_df['valor_stock'].sum()
+            
+            # Alertas de Insumos
+            low_stock_materials = raw_materials_df[
+                (raw_materials_df['current_stock'] <= raw_materials_df['alert_threshold']) &
+                (raw_materials_df['alert_threshold'] > 0)
+            ]
+            if not low_stock_materials.empty:
+                material_alerts = dbc.ListGroup([
+                    dbc.ListGroupItem(f"{row['name']} (Stock: {row['current_stock']} {row['unit_measure']})", color="warning") 
+                    for _, row in low_stock_materials.iterrows()
+                ])
+
+        return (
+            f"${total_revenue:,.2f}",                # 1.
+            f"${gross_profit:,.2f}",                 # 2.
+            f"${net_profit:,.2f}",                   # 3.
+            f"${total_product_investment:,.2f}",    # 4. Inversión Productos
+            f"${total_material_investment:,.2f}",   # 5. Inversión Insumos (AÑADIDO)
+            product_alerts,                         # 6. Alertas Productos
+            material_alerts,                        # 7. Alertas Insumos (AÑADIDO)
+            fig_monthly,                            # 8. 
+            fig_waterfall,
+            fig_sales_by_prod,                     # 10.
+            fig_revenue_by_cat,                    # 11.
+            fig_sales_over_time,                   # 12.
+            date_picker_disabled
+            )

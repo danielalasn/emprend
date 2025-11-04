@@ -42,9 +42,30 @@ def get_layout():
                 dbc.Input(id="edit-material-name-input", type="text", className="mb-2"),
                 dbc.Label("Unidad de Medida:", html_for="edit-material-unit-dropdown"),
                 dcc.Dropdown(id="edit-material-unit-dropdown", options=unit_options, className="mb-2"),
+
+                html.Hr(),
+                dbc.Label("Ajuste Manual (¡Cuidado!):", className="fw-bold text-danger"),
+                dbc.Row([
+                    # Columna del STOCK
+                    dbc.Col([
+                        dbc.Label("Stock Actual Manual:", html_for="edit-material-stock-input"),
+                        # El ID de este INPUT debe ser "stock"
+                        dbc.Input(id="edit-material-stock-input", type="number", min=0, step="any", placeholder="0.00")
+                    ]),
+                    
+                    # Columna del COSTO
+                    dbc.Col([
+                        dbc.Label("Costo Promedio Manual:", html_for="edit-material-cost-input"),
+                        # El ID de este INPUT debe ser "cost"
+                        dbc.Input(id="edit-material-cost-input", type="number", min=0, step="any", placeholder="0.00")
+                    ])
+                ], className="mb-2"),
+                html.Hr(),
+
                 dbc.Label("Alertar si Stock baja de:", html_for="edit-material-alert-input"),
-                dbc.Input(id="edit-material-alert-input", type="number", min=0, step=0.01),
-                dbc.Alert("Nota: El Stock Actual y Costo Promedio se actualizan solo mediante Compras/Consumo.", color="info", className="mt-3 fs-sm")
+                dbc.Input(id="edit-material-alert-input", type="number", min=0, step="any", className="mt-2", placeholder="0.00"),
+                # Alerta modificada
+                dbc.Alert("Nota: Ajustar el stock o costo manualmente anula el promedio ponderado. Úsalo solo para corregir errores.", color="warning", className="mt-3 fs-sm")
             ])),
             dbc.ModalFooter([
                 dbc.Button("Cancelar", id="cancel-edit-material-button", color="secondary"),
@@ -91,15 +112,18 @@ def get_layout():
                          dbc.Row([
                              dbc.Col(html.Div([
                                  dbc.Label("Stock Actual (Si ya tienes):", html_for="material-stock-input"),
-                                 dbc.Input(id="material-stock-input", type="number", min=0, step=0.01, value=0, placeholder="Cantidad")
+                                 # CORREGIDO: placeholder
+                                 dbc.Input(id="material-stock-input", type="number", min=0, step="any", placeholder="0.00")
                              ]), width=4),
                              dbc.Col(html.Div([
                                  dbc.Label("Costo por Unidad (De ese stock):", html_for="material-cost-input"),
-                                 dbc.Input(id="material-cost-input", type="number", min=0, step=0.01, value=0, placeholder="Costo unitario")
+                                 # CORREGIDO: placeholder
+                                 dbc.Input(id="material-cost-input", type="number", min=0, step="any", placeholder="0.00")
                              ]), width=4),
                              dbc.Col(html.Div([
                                 dbc.Label("Alertar si Stock baja de:", html_for="material-alert-input"),
-                                dbc.Input(id="material-alert-input", type="number", min=0, step=0.01, value=0, placeholder="Cantidad")
+                                # CORREGIDO: placeholder
+                                dbc.Input(id="material-alert-input", type="number", min=0, step="any", placeholder="0.00")
                              ]), width=4),
                          ], className="mb-3"),
                         dbc.Button("Guardar Nuevo Insumo", id="save-material-button", color="success", n_clicks=0, className="mt-3")
@@ -107,10 +131,10 @@ def get_layout():
                 ])
             ]), # Fin Tab Añadir Insumo
 
-            # --- Tab: Registrar Compra (Cuerpo CORREGIDO) ---
+            # --- Tab: Registrar Compra ---
             dbc.Tab(label="Registrar Compra", tab_id="sub-tab-add-purchase", children=[
                  dbc.Card(className="m-4", children=[
-                     dbc.CardBody([ # <-- Contenido CORREGIDO aquí
+                     dbc.CardBody([
                          html.H3("Registrar Compra de Insumos"),
                          html.Div(id="add-purchase-alert"),
                          dbc.Row([
@@ -122,11 +146,12 @@ def get_layout():
                          dbc.Row([
                              dbc.Col(html.Div([
                                  dbc.Label("Cantidad Comprada:", html_for="purchase-quantity-input"),
-                                 dbc.Input(id="purchase-quantity-input", type="number", min=0.001, step=0.01)
+                                 dbc.Input(id="purchase-quantity-input", type="number", min=0.001, step="any", placeholder="0.00")
                              ]), width=6),
                               dbc.Col(html.Div([
-                                 dbc.Label("Costo Total de la Compra:", html_for="purchase-cost-input"),
-                                 dbc.Input(id="purchase-cost-input", type="number", min=0, step=0.01)
+                                 # --- CORRECCIÓN: Etiqueta cambiada ---
+                                 dbc.Label("Costo por Unidad:", html_for="purchase-cost-input"),
+                                 dbc.Input(id="purchase-cost-input", type="number", min=0, step="any", placeholder="0.00")
                              ]), width=6),
                          ], className="mb-3"),
                          dbc.Row([
@@ -160,6 +185,9 @@ def get_layout():
 
 # --- Callbacks ---
 def register_callbacks(app):
+
+    # Callback añadir material
+    # --- INICIO DEL CÓDIGO FALTANTE ---
 
     # Callback añadir material
     @app.callback(
@@ -209,10 +237,77 @@ def register_callbacks(app):
 
         if success:
             new_signal = (signal_data or 0) + 1
-            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, "", None, 0, 0, 0
+            # Limpiar campos en éxito
+            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, "", None, None, None, None
         else:
             return dbc.Alert(message, color="danger"), dash.no_update, name, unit, stock, cost, alert
 
+# Callback guardar Compra
+    @app.callback(
+        Output('add-purchase-alert', 'children', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Output('purchase-material-dropdown', 'value', allow_duplicate=True), 
+        Output('purchase-quantity-input', 'value', allow_duplicate=True),
+        Output('purchase-cost-input', 'value', allow_duplicate=True), 
+        Output('purchase-supplier-input', 'value', allow_duplicate=True),
+        Output('purchase-notes-input', 'value', allow_duplicate=True),
+        Input('save-purchase-button', 'n_clicks'),
+        [State('purchase-material-dropdown', 'value'), State('purchase-quantity-input', 'value'),
+         State('purchase-cost-input', 'value'), State('purchase-date-picker', 'date'),
+         State('purchase-supplier-input', 'value'), State('purchase-notes-input', 'value'),
+         State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def handle_add_purchase(n_clicks, material_id, quantity, cost, date_str, supplier, notes, signal_data):
+        if n_clicks is None or n_clicks < 1: raise PreventUpdate
+        if not current_user.is_authenticated: raise PreventUpdate
+
+        print("--- DEBUG: BOTÓN GUARDAR COMPRA PRESIONADO ---")
+        print(f"Material ID: {material_id} (Tipo: {type(material_id)})")
+        print(f"Quantity: {quantity} (Tipo: {type(quantity)})")
+        print(f"Cost: {cost} (Tipo: {type(cost)})")
+        print(f"Date String: {date_str} (Tipo: {type(date_str)})")
+
+        user_id = current_user.id
+
+        # --- 1. CORRECCIÓN: Validación con 'is None' (acepta 0) ---
+        if material_id is None or quantity is None or cost is None or date_str is None:
+             # Mensaje de alerta actualizado
+             return dbc.Alert("Insumo, Cantidad, Costo por Unidad y Fecha son obligatorios.", color="warning"), dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+        # --- 2. CORRECCIÓN: Lógica de Costo por Unidad ---
+        try:
+            quantity_float = float(quantity)
+            cost_per_unit_float = float(cost) # 'cost' es ahora 'costo por unidad'
+            
+            # Calcular el costo total para la BD
+            total_cost_calculated = quantity_float * cost_per_unit_float 
+            
+            purchase_datetime = datetime.strptime(date_str, '%Y-%m-%d')
+            
+            if quantity_float <= 0 or cost_per_unit_float < 0:
+                 raise ValueError("Cantidad debe ser positiva y costo no negativo.")
+        except (ValueError, TypeError):
+              # Mensaje de alerta actualizado
+              return dbc.Alert("Cantidad o Costo por Unidad no son números válidos, o la fecha es incorrecta.", color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
+
+        # --- 3. CORRECCIÓN: Guardar el costo total calculado ---
+        purchase_data = {
+            "material_id": material_id, "quantity_purchased": quantity_float,
+            "total_cost": total_cost_calculated, # Guardar el total
+            "purchase_date": purchase_datetime,
+            "supplier": supplier.strip() if supplier else None,
+            "notes": notes.strip() if notes else None
+        }
+
+        success, message = add_material_purchase(purchase_data, user_id)
+
+        if success:
+            new_signal = (signal_data or 0) + 1
+            # Limpiar campos en éxito
+            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, None, None, None, None, None
+        else:
+             return dbc.Alert(message, color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
     # Callback actualizar tabla inventario
     @app.callback(
         Output('material-inventory-table-container', 'children'),
@@ -275,7 +370,13 @@ def register_callbacks(app):
     )
     def update_purchase_dropdown(active_sub_tab, signal_data):
         if not current_user.is_authenticated: raise PreventUpdate
-        if active_sub_tab != 'sub-tab-add-purchase': raise PreventUpdate
+        
+        # Optimización: Solo cargar si la pestaña es la correcta
+        triggered_id = dash.callback_context.triggered_id
+        if triggered_id == 'material-sub-tabs' and active_sub_tab != 'sub-tab-add-purchase':
+            raise PreventUpdate
+        if active_sub_tab != 'sub-tab-add-purchase' and triggered_id != 'store-data-signal':
+             raise PreventUpdate
 
         user_id = current_user.id
         try:
@@ -284,59 +385,13 @@ def register_callbacks(app):
             print(f"Error al cargar opciones de materia prima: {e}")
             return []
 
-    # Callback guardar Compra
-    @app.callback(
-        Output('add-purchase-alert', 'children'),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Output('purchase-material-dropdown', 'value'), Output('purchase-quantity-input', 'value'),
-        Output('purchase-cost-input', 'value'), Output('purchase-supplier-input', 'value'),
-        Output('purchase-notes-input', 'value'),
-        Input('save-purchase-button', 'n_clicks'),
-        [State('purchase-material-dropdown', 'value'), State('purchase-quantity-input', 'value'),
-         State('purchase-cost-input', 'value'), State('purchase-date-picker', 'date'),
-         State('purchase-supplier-input', 'value'), State('purchase-notes-input', 'value'),
-         State('store-data-signal', 'data')],
-        prevent_initial_call=True
-    )
-    def handle_add_purchase(n_clicks, material_id, quantity, cost, date_str, supplier, notes, signal_data):
-        if n_clicks is None or n_clicks < 1: raise PreventUpdate
-        if not current_user.is_authenticated: raise PreventUpdate
-
-        user_id = current_user.id
-
-        if not all([material_id, quantity, cost, date_str]):
-             return dbc.Alert("Insumo, Cantidad, Costo Total y Fecha son obligatorios.", color="warning"), dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
-
-        try:
-            quantity_float = float(quantity)
-            cost_float = float(cost)
-            purchase_datetime = datetime.strptime(date_str, '%Y-%m-%d')
-            if quantity_float <= 0 or cost_float < 0:
-                 raise ValueError("Cantidad debe ser positiva y costo no negativo.")
-        except (ValueError, TypeError):
-              return dbc.Alert("Cantidad o Costo Total no son números válidos, o la fecha es incorrecta.", color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes # Keep values on error
-
-        purchase_data = {
-            "material_id": material_id, "quantity_purchased": quantity_float,
-            "total_cost": cost_float, "purchase_date": purchase_datetime,
-            "supplier": supplier.strip() if supplier else None,
-            "notes": notes.strip() if notes else None
-        }
-
-        success, message = add_material_purchase(purchase_data, user_id)
-
-        if success:
-            new_signal = (signal_data or 0) + 1
-            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, None, None, None, None, None
-        else:
-             return dbc.Alert(message, color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
-
-    # Callbacks para Modales Edit/Delete
     @app.callback(
         Output('material-edit-modal', 'is_open'), Output('material-delete-confirm-modal', 'is_open'),
         Output('store-material-id-to-edit', 'data'), Output('store-material-id-to-delete', 'data'),
         Output('edit-material-name-input', 'value'), Output('edit-material-unit-dropdown', 'value'),
         Output('edit-material-alert-input', 'value'), Output('edit-material-alert', 'children'),
+        Output('edit-material-stock-input', 'value'), # Output 9
+        Output('edit-material-cost-input', 'value'),  # Output 10
         Input('material-inventory-table', 'active_cell'),
         State('material-inventory-table', 'derived_virtual_data'),
         prevent_initial_call=True
@@ -354,6 +409,7 @@ def register_callbacks(app):
         open_edit, open_delete = False, False
         edit_id, delete_id = None, None
         edit_name, edit_unit, edit_alert = dash.no_update, dash.no_update, dash.no_update
+        edit_stock, edit_cost = dash.no_update, dash.no_update
         edit_alert_msg = None
 
         if col_id == 'editar':
@@ -361,10 +417,14 @@ def register_callbacks(app):
             edit_name = material_info.get('name')
             edit_unit = material_info.get('unit_measure')
             edit_alert = material_info.get('alert_threshold')
+            edit_stock = material_info.get('current_stock') # Para Output 9
+            edit_cost = material_info.get('average_cost')  # Para Output 10
         elif col_id == 'eliminar':
             open_delete, delete_id = True, material_id
 
-        return open_edit, open_delete, edit_id, delete_id, edit_name, edit_unit, edit_alert, edit_alert_msg
+        # CORREGIDO: El orden del return debe coincidir con los Outputs
+        # 9: edit_stock, 10: edit_cost
+        return open_edit, open_delete, edit_id, delete_id, edit_name, edit_unit, edit_alert, edit_alert_msg, edit_stock, edit_cost
 
     # Callback guardar Edición Material
     @app.callback(
@@ -372,12 +432,17 @@ def register_callbacks(app):
         Output('store-data-signal', 'data', allow_duplicate=True),
         Output('edit-material-alert', 'children', allow_duplicate=True),
         Input('save-edited-material-button', 'n_clicks'),
-        [State('store-material-id-to-edit', 'data'), State('edit-material-name-input', 'value'),
-         State('edit-material-unit-dropdown', 'value'), State('edit-material-alert-input', 'value'),
-         State('store-data-signal', 'data')],
+        [State('store-material-id-to-edit', 'data'), # 1
+         State('edit-material-name-input', 'value'),  # 2
+         State('edit-material-unit-dropdown', 'value'),# 3
+         State('edit-material-alert-input', 'value'),  # 4
+         State('edit-material-stock-input', 'value'),  # 5
+         State('edit-material-cost-input', 'value'),   # 6
+         State('store-data-signal', 'data')],           # 7
         prevent_initial_call=True
     )
-    def save_edited_material(n_clicks, material_id, name, unit, alert, signal_data):
+    # --- CORRECCIÓN: Orden de argumentos en 'def' ---
+    def save_edited_material(n_clicks, material_id, name, unit, alert, stock, cost, signal_data):
         if n_clicks is None or not material_id: raise PreventUpdate
         if not current_user.is_authenticated: raise PreventUpdate
 
@@ -387,11 +452,20 @@ def register_callbacks(app):
 
         try:
              alert_f = float(alert) if alert is not None else 0
-             if alert_f < 0: raise ValueError("Umbral no puede ser negativo.")
+             stock_f = float(stock) if stock is not None else 0
+             cost_f = float(cost) if cost is not None else 0
+             if alert_f < 0 or stock_f < 0 or cost_f < 0:
+                 raise ValueError("Valores numéricos no pueden ser negativos.")
         except (ValueError, TypeError):
-             return True, dash.no_update, dbc.Alert("Umbral de alerta debe ser un número válido no negativo.", color="danger")
+             return True, dash.no_update, dbc.Alert("Umbral, Stock y Costo deben ser números válidos no negativos.", color="danger")
 
-        update_data = {"name": name.strip(), "unit_measure": unit, "alert_threshold": alert_f}
+        update_data = {
+            "name": name.strip(), 
+            "unit_measure": unit, 
+            "alert_threshold": alert_f,
+            "current_stock": stock_f,
+            "average_cost": cost_f
+        }
 
         try:
             update_raw_material(material_id, update_data, user_id)

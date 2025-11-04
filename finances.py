@@ -63,8 +63,37 @@ def get_layout():
                     ]),
                     dbc.Col(width=6, children=[
                         dbc.Card([
-                            dbc.CardHeader("Desglose de Gastos"),
-                            dbc.CardBody(dcc.Graph(id='expense-pie-chart', style={'height': '350px'}))
+                            dbc.CardHeader("Desglose de Gastos Operativos"), # <-- Título general
+                            dbc.CardBody([
+                                dbc.Tabs(id="expense-breakdown-tabs", active_tab="tab-visual", children=[
+
+                                    # Pestaña 1: El Gráfico de Pastel (Restaurado)
+                                    dbc.Tab(label="Resumen Visual", tab_id="tab-visual", children=[
+                                        dcc.Graph(id='expense-pie-chart', style={'height': '350px'}, className="mt-3")
+                                    ]),
+
+                                    # Pestaña 2: La Tabla de Detalle
+# --- CÓDIGO CORREGIDO ---
+                                    dbc.Tab(label="Detalle en Tabla", tab_id="tab-table", children=[
+                                        # Envolvemos la tabla en un html.Div para aplicar el margen
+                                        html.Div([ 
+                                            dash_table.DataTable(
+                                                id='expense-detail-table',
+                                                columns=[
+                                                    {"name": "Categoría de Gasto", "id": "Categoría"},
+                                                    {"name": "Monto Total", "id": "Monto", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed, symbol=Symbol.yes)}
+                                                ],
+                                                style_cell={'textAlign': 'left'},
+                                                style_header={'fontWeight': 'bold'},
+                                                sort_action='native',
+                                                sort_by=[{'column_id': 'Monto', 'direction': 'desc'}],
+                                                page_size=7
+                                                # className="mt-3" <-- ELIMINADO DE AQUÍ
+                                            )
+                                        ], className="mt-3") # <-- Y AÑADIDO AL html.Div
+                                    ]),
+                                ])
+                            ])
                         ])
                     ]),
                 ], className="mb-4"),
@@ -117,7 +146,8 @@ def register_callbacks(app):
         Output('gross-margin-card', 'children'),
         Output('net-margin-card', 'children'),
         Output('avg-ticket-card', 'children'),
-        Output('expense-pie-chart', 'figure'),
+        Output('expense-pie-chart', 'figure'),    # <-- CORREGIDO: Output 5
+        Output('expense-detail-table', 'data'),
         Output('product-performance-table', 'data'),
         Output('finances-date-picker', 'disabled'),
         [Input('finances-sub-tabs', 'active_tab'),
@@ -150,15 +180,39 @@ def register_callbacks(app):
         net_margin_card = dbc.CardBody([html.H4("Margen Ganancia Neta", className="card-title"), html.H2(f"{results['net_margin']:.2f}%")])
         avg_ticket_card = dbc.CardBody([html.H4("Ticket de Venta Promedio", className="card-title"), html.H2(f"${results['avg_ticket']:,.2f}")])
 
+        expense_table_data = []
+        # --- INICIO DEL BLOQUE A AÑADIR (LÓGICA DEL GRÁFICO) ---
         fig_expenses = px.pie(title="Gastos por Categoría", names=['Sin Gastos'], values=[1]).update_traces(textinfo='none', hoverinfo='none')
+        # --- FIN DEL BLOQUE A AÑADIR ---
 
         if not expenses_df.empty:
             exp_cat_df = load_expense_categories(user_id)
             if not exp_cat_df.empty:
                 expenses_with_names = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left')
                 expense_summary = expenses_with_names.groupby('name')['amount'].sum().reset_index()
+
+                # Lógica para la TABLA (ya la tienes)
+                expense_table_data = expense_summary.rename(
+                    columns={'name': 'Categoría', 'amount': 'Monto'}
+                ).to_dict('records')
+
+                # --- INICIO DEL BLOQUE A AÑADIR (LÓGICA DEL GRÁFICO) ---
+                # Lógica para el GRÁFICO
                 fig_expenses = px.pie(expense_summary, names='name', values='amount', title="Gastos por Categoría", hole=.3)
-        fig_expenses.update_layout(margin=dict(t=30, b=0, l=0, r=0))
+                fig_expenses.update_layout(margin=dict(t=30, b=0, l=0, r=0))
+                # --- FIN DEL BLOQUE A AÑADIR ---
+        
+        if not expenses_df.empty:
+            exp_cat_df = load_expense_categories(user_id)
+            if not exp_cat_df.empty:
+                expenses_with_names = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left')
+                # Agrupar, sumar, y renombrar para la tabla
+                expense_summary = expenses_with_names.groupby('name')['amount'].sum().reset_index()
+                expense_summary = expense_summary.rename(columns={'name': 'Categoría', 'amount': 'Monto'})
+                # Opcional: añadir fila de Total
+                # total_gastos = pd.DataFrame([{'Categoría': 'Total Gastos Operativos', 'Monto': expense_summary['Monto'].sum()}])
+                # expense_summary = pd.concat([expense_summary, total_gastos], ignore_index=True)
+                expense_table_data = expense_summary.to_dict('records')
 
         product_performance_data = []
         if not merged_df.empty:
@@ -181,8 +235,9 @@ def register_callbacks(app):
                 'ganancia_bruta': 'Ganancia Bruta', 'rentabilidad_%': 'Rentabilidad (%)'
             }).to_dict('records')
 
-        return pnl_data, gross_margin_card, net_margin_card, avg_ticket_card, fig_expenses, product_performance_data, date_picker_disabled
-        
+        # --- ORDEN CORREGIDO ---
+        return pnl_data, gross_margin_card, net_margin_card, avg_ticket_card, fig_expenses, expense_table_data, product_performance_data, date_picker_disabled
+
     @app.callback(
         Output('comparison-card-ingresos', 'children'),
         Output('comparison-cards-container', 'children'),

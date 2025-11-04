@@ -1,7 +1,7 @@
 # database.py
 import pandas as pd
 from sqlalchemy import create_engine, text
-from datetime import datetime, timedelta, date # Asegúrate de tener date
+from datetime import datetime, timedelta, date 
 import os
 
 # --- CONFIGURACIÓN DE LA BASE DE DATOS ---
@@ -465,14 +465,26 @@ def add_raw_material(data, user_id):
             with connection.begin(): # Usar transacción
                 existing_result = connection.execute(existing_query, {"user_id": user_id, "name": material_name}).fetchone()
 
+    # --- ESTE ES EL NUEVO CÓDIGO CORREGIDO ---
                 if existing_result:
                     material_id, is_active = existing_result
                     if is_active:
                         return False, f"Error: El insumo '{material_name}' ya existe."
                     else:
-                        # Reactivar
-                        reactivate_raw_material(material_id, user_id) # Usar la función separada
-                        return True, f"Insumo '{material_name}' reactivado exitosamente."
+                        # Reactivar Y ACTUALIZAR el stock/costo con los nuevos valores
+                        update_query = text("""
+                            UPDATE raw_materials
+                            SET unit_measure = :unit_measure,
+                                current_stock = :current_stock,
+                                average_cost = :average_cost,
+                                alert_threshold = :alert_threshold,
+                                is_active = TRUE
+                            WHERE material_id = :material_id AND user_id = :user_id
+                        """)
+                        # 'data' tiene todos los valores nuevos del formulario
+                        connection.execute(update_query, {**data, "material_id": material_id, "user_id": user_id})
+
+                        return True, f"Insumo '{material_name}' reactivado y actualizado exitosamente."
 
                 # Si no existe, insertarlo
                 insert_query = text("""
@@ -567,35 +579,68 @@ def add_material_purchase(data, user_id):
         print(f"Error general en add_material_purchase: {e}")
         return False, "Error al registrar la compra en la base de datos."
 
+# EN database.py: REEMPLAZA LA FUNCIÓN COMPLETA
+
+# EN database.py: REEMPLAZA LA FUNCIÓN COMPLETA
+
 def update_raw_material(material_id, data, user_id):
-    """Actualiza los datos de una materia prima (nombre, unidad, umbral)."""
-    allowed_updates = {'name': data.get('name'),
-                       'unit_measure': data.get('unit_measure'),
-                       'alert_threshold': float(data.get('alert_threshold', 0))}
+    """Actualiza los datos de una materia prima (nombre, unidad, umbral, stock, costo)."""
+    try:
+        name_val = data.get('name')
+        if name_val is None:
+            raise ValueError("El nombre no puede ser nulo.")
+        
+        allowed_updates = {
+            'name': name_val.strip(),
+            'unit_measure': data.get('unit_measure'),
+            'alert_threshold': float(data.get('alert_threshold', 0)),
+            'current_stock': float(data.get('current_stock', 0)),
+            'average_cost': float(data.get('average_cost', 0))
+        }
+    except Exception as e:
+        raise ValueError(f"Error en los tipos de datos: {e}")
+
     if not allowed_updates['name'] or not allowed_updates['unit_measure']:
         raise ValueError("Nombre y Unidad de Medida no pueden estar vacíos.")
-    if allowed_updates['alert_threshold'] < 0:
-         raise ValueError("Umbral de alerta no puede ser negativo.")
+    if allowed_updates['alert_threshold'] < 0 or allowed_updates['current_stock'] < 0 or allowed_updates['average_cost'] < 0:
+         raise ValueError("Todos los valores numéricos (umbral, stock, costo) no pueden ser negativos.")
+
+    new_name = allowed_updates['name'] # El nuevo nombre al que quieres cambiar
 
     with engine.connect() as connection:
-        # Verificar si el nuevo nombre ya existe (y no es el material actual)
+        
+        # --- INICIO DE LA MODIFICACIÓN ---
+        # 1. Revisar si el nombre YA EXISTE en otra fila
         check_name_query = text("""
-            SELECT material_id FROM raw_materials
-            WHERE user_id = :user_id AND lower(name) = lower(:name) AND material_id != :material_id AND is_active = TRUE
+            SELECT material_id, is_active FROM raw_materials
+            WHERE user_id = :user_id 
+              AND lower(name) = lower(:name) 
+              AND material_id != :material_id
         """)
         existing = connection.execute(check_name_query, {
             "user_id": int(user_id),
-            "name": allowed_updates['name'],
+            "name": new_name,
             "material_id": int(material_id)
         }).fetchone()
-        if existing:
-            raise ValueError(f"Ya existe otro insumo activo con el nombre '{allowed_updates['name']}'.")
 
+        if existing:
+            if existing.is_active:
+                raise ValueError(f"Error: Ya existe un insumo ACTIVO con el nombre '{new_name}'.")
+            else:
+                raise ValueError(f"Error: Ya existe un insumo INACTIVO con el nombre '{new_name}'. No puedes duplicar el nombre. Puedes reactivarlo añadiendo un nuevo insumo con ese nombre.")
+        # --- FIN DE LA MODIFICACIÓN ---
+
+        # 3. Si no hay conflictos, proceder con la actualización
         query = text("""
             UPDATE raw_materials
-            SET name = :name, unit_measure = :unit_measure, alert_threshold = :alert_threshold
+            SET name = :name, 
+                unit_measure = :unit_measure, 
+                alert_threshold = :alert_threshold,
+                current_stock = :current_stock,
+                average_cost = :average_cost
             WHERE material_id = :material_id AND user_id = :user_id
         """)
+        
         connection.execute(query, {
             **allowed_updates,
             "material_id": int(material_id),

@@ -54,7 +54,7 @@ def get_layout():
                  html.Div(id="sale-validation-alert"),
                  dbc.Row([
                      dbc.Col([html.Label("Selecciona un Producto"), dcc.Dropdown(id='product-dropdown', placeholder="Selecciona un producto...")], width=6),
-                     dbc.Col([html.Label("Cantidad Vendida"), dbc.Input(id='quantity-input', type='number', min=1, step=1, value=1)], width=6),
+                     dbc.Col([html.Label("Cantidad Vendida"), dbc.Input(id='quantity-input', type='number', min=1, step="any", value=1)], width=6),
                  ], className="mb-3"),
                  dbc.Button("Registrar Venta", id="submit-sale-button", color="primary", n_clicks=0, className="mt-3")
              ])
@@ -69,6 +69,16 @@ def get_layout():
                          style={'width': '100%', 'height': '60px', 'lineHeight': '60px', 'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '5px', 'textAlign': 'center', 'margin': '10px 0'},
                          multiple=False
                      ),
+                     dbc.Alert([
+                         html.H5("Formato Requerido:", className="alert-heading"),
+                         html.P("El archivo Excel debe tener las siguientes columnas (exactamente como se escriben):"),
+                         html.Ul([
+                            html.Li([html.B("nombre"), " (El 'Nombre del Producto' ya debe existir en tus productos)"]),
+                            html.Li([html.B("cantidad"), " (El número de unidades vendidas)"]),
+                            html.Li([html.B("fecha"), " (Formato AAAA-MM-DD o similar)"]),
+                            ])
+                     ], color="info", className="mt-2"),
+
                      dbc.Switch(
                          id="upload-sales-update-stock",
                          label="Descontar stock del inventario actual (Marcar solo para ventas nuevas)",
@@ -283,11 +293,12 @@ def register_callbacks(app):
         except Exception as e:
             return dbc.Alert(f"Error al procesar el archivo: {e}", color="danger"), dash.no_update
 
-        required_columns = ['Nombre del Producto', 'Cantidad', 'Fecha de Venta']
+        required_columns = ['nombre', 'cantidad', 'fecha'] # <-- CAMBIADO
         errors = []
         if not all(col in df.columns for col in required_columns):
+            # 2. Actualiza el mensaje de error
             return dbc.Alert(f"El archivo debe contener las columnas: {', '.join(required_columns)}", color="danger"), dash.no_update
-
+        
         # Usar get_product_options para obtener solo productos activos
         products_active_df = pd.DataFrame(get_product_options(user_id))
         if products_active_df.empty:
@@ -305,9 +316,10 @@ def register_callbacks(app):
         stock_updates_needed = {} # Guardar cambios de stock aquí {product_id: new_stock}
 
         for index, row in df.iterrows():
-            product_name = row['Nombre del Producto']
-            quantity = row['Cantidad']
-            sale_date = row['Fecha de Venta']
+            # 3. Cambia los nombres para acceder a la fila
+            product_name = row['nombre']   # <-- CAMBIADO
+            quantity = row['cantidad'] # <-- CAMBIADO
+            sale_date = row['fecha']     #
 
             if product_name not in products_lookup:
                 errors.append(f"Fila {index + 2}: El producto '{product_name}' no existe o está inactivo.")
