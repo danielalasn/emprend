@@ -111,7 +111,8 @@ def get_layout():
                                 {"name": "Rentabilidad (%)", "id": "Rentabilidad (%)", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed, symbol=Symbol.yes, symbol_suffix=' %')}
                             ],
                             page_size=10,
-                            sort_action='native'
+                            sort_action='native',
+                            style_table={'overflowX': 'auto'}
                         ))
                     ]))
                 ])
