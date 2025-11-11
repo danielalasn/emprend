@@ -842,3 +842,89 @@ def deduct_materials_for_production(connection, product_id, quantity_produced, u
     
     connection.execute(update_query, final_params)
     return True, "Stock de insumos deducido exitosamente."
+
+# --- INICIO DEL NUEVO BLOQUE: FUNCIONES DE BORRADO MASIVO ---
+
+def delete_sales_bulk(sale_ids, user_id):
+    """
+    Borra masivamente las ventas y restaura el stock de los productos correspondientes.
+    Ejecuta todo en una sola transacción.
+    """
+    if not sale_ids:
+        return True, "No se seleccionó ninguna venta."
+    
+    sale_ids_int = [int(sid) for sid in sale_ids]
+    
+    with engine.connect() as connection:
+        with connection.begin(): # Inicia la transacción
+            
+            # 1. Obtener los productos y cantidades a restaurar ANTES de borrar
+            restore_query = text("""
+                SELECT product_id, SUM(quantity) as total_to_restore
+                FROM sales
+                WHERE sale_id = ANY(:sale_ids) AND user_id = :user_id AND product_id IS NOT NULL
+                GROUP BY product_id
+            """)
+            items_to_restore = connection.execute(restore_query, {"sale_ids": sale_ids_int, "user_id": int(user_id)}).fetchall()
+
+            # 2. Restaurar el stock para cada producto
+            if items_to_restore:
+                update_stock_query = text("""
+                    UPDATE products SET stock = stock + :quantity
+                    WHERE product_id = :product_id AND user_id = :user_id
+                """)
+                restore_params = [
+                    {"quantity": item.total_to_restore, "product_id": item.product_id, "user_id": int(user_id)}
+                    for item in items_to_restore
+                ]
+                connection.execute(update_stock_query, restore_params)
+
+            # 3. Borrar las ventas
+            delete_query = text("DELETE FROM sales WHERE sale_id = ANY(:sale_ids) AND user_id = :user_id")
+            connection.execute(delete_query, {"sale_ids": sale_ids_int, "user_id": int(user_id)})
+            
+            # El commit es automático si no hay errores
+    return True, f"{len(sale_ids_int)} ventas eliminadas y stock restaurado."
+
+
+def delete_expenses_bulk(expense_ids, user_id):
+    """Borra masivamente los gastos."""
+    if not expense_ids:
+        return True, "No se seleccionó ningún gasto."
+    
+    expense_ids_int = [int(eid) for eid in expense_ids]
+    
+    with engine.connect() as connection:
+        query = text("DELETE FROM expenses WHERE expense_id = ANY(:expense_ids) AND user_id = :user_id")
+        connection.execute(query, {"expense_ids": expense_ids_int, "user_id": int(user_id)})
+        connection.commit()
+    return True, f"{len(expense_ids_int)} gastos eliminados."
+
+
+def delete_products_bulk(product_ids, user_id):
+    """Borrado suave masivo de productos."""
+    if not product_ids:
+        return True, "No se seleccionó ningún producto."
+        
+    product_ids_int = [int(pid) for pid in product_ids]
+
+    with engine.connect() as connection:
+        query = text("UPDATE products SET is_active = FALSE WHERE product_id = ANY(:product_ids) AND user_id = :user_id")
+        connection.execute(query, {"product_ids": product_ids_int, "user_id": int(user_id)})
+        connection.commit()
+    return True, f"{len(product_ids_int)} productos marcados como inactivos."
+
+
+def delete_materials_bulk(material_ids, user_id):
+    """Borrado suave masivo de materias primas."""
+    if not material_ids:
+        return True, "No se seleccionó ningún insumo."
+
+    material_ids_int = [int(mid) for mid in material_ids]
+
+    with engine.connect() as connection:
+        query = text("UPDATE raw_materials SET is_active = FALSE WHERE material_id = ANY(:material_ids) AND user_id = :user_id")
+        connection.execute(query, {"material_ids": material_ids_int, "user_id": int(user_id)})
+        connection.commit()
+    return True, f"{len(material_ids_int)} insumos marcados como inactivos."
+

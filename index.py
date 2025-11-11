@@ -18,6 +18,10 @@ from login import get_login_layout, get_change_password_layout, register_login_c
 from admin import get_layout as get_admin_layout, register_callbacks as register_admin_callbacks
 from materia_prima import get_layout as get_material_layout, register_callbacks as register_material_callbacks 
 
+from dash.exceptions import PreventUpdate # <-- AÑADE ESTA
+from resumen_excel import generate_excel_summary # <-- AÑADE ESTA
+from datetime import date as dt_date
+
 # --- Configuración de Flask-Login ---
 login_manager.init_app(server)
 login_manager.login_view = '/login'
@@ -46,11 +50,19 @@ def get_main_app_layout():
         dcc.Store(id='store-data-signal'),
         dcc.Download(id="download-sales-excel"),
         dcc.Download(id="download-expenses-excel"),
+        dcc.Download(id="download-summary-excel"),
 
         dbc.Row([
-            dbc.Col(html.H1("Empren-D", className="text-center my-4"), width=10),
-            dbc.Col(html.A("Cerrar Sesión", href="/logout", className="btn btn-danger mt-4"), width=2, className="text-end")
-        ]),
+            dbc.Col(html.H1("Empren-D", className="text-center my-4"), width=8), # <-- width cambiado a 8
+            dbc.Col(
+                dbc.Button("Descargar Resumen Completo", id="btn-download-summary-excel", color="success", className="mt-4"),
+                width=2, className="text-end" # <-- Botón nuevo
+            ),
+            dbc.Col(
+                html.A("Cerrar Sesión", href="/logout", className="btn btn-danger mt-4"), 
+                width=2, className="text-end"
+            )
+        ], justify="between", align="center"), # <-- 'justify' y 'align' añadidos
 
         # Alerta para suscripción
         html.Div(id='subscription-alert', className="m-3"),
@@ -150,6 +162,29 @@ register_products_callbacks(app)
 register_login_callbacks(app)
 register_admin_callbacks(app)
 register_material_callbacks(app)
+
+
+# --- CALLBACK PARA DESCARGAR EL RESUMEN COMPLETO ---
+@app.callback(
+    Output('download-summary-excel', 'data'),
+    Input('btn-download-summary-excel', 'n_clicks'),
+    prevent_initial_call=True
+)
+def download_full_summary(n_clicks):
+    if n_clicks is None or not current_user.is_authenticated:
+        raise PreventUpdate
+
+    user_id = int(current_user.id)
+
+    # 1. Generar el archivo Excel en memoria
+    excel_bytes_io = generate_excel_summary(user_id)
+
+    # 2. Crear un nombre de archivo dinámico
+    today_str = dt_date.today().strftime("%Y-%m-%d")
+    filename = f"Resumen_Empren-D_{today_str}.xlsx"
+
+    # 3. Enviar los bytes al navegador
+    return dcc.send_bytes(excel_bytes_io.getvalue(), filename)
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -12,7 +12,8 @@ from datetime import date, datetime
 # --- Importar funciones reales de database ---
 from database import (
     load_raw_materials, add_raw_material, get_raw_material_options,
-    add_material_purchase, update_raw_material, delete_raw_material
+    add_material_purchase, update_raw_material, delete_raw_material,
+    delete_materials_bulk # <-- Importación añadida
 )
 
 # --- Layout ---
@@ -49,22 +50,19 @@ def get_layout():
                     # Columna del STOCK
                     dbc.Col([
                         dbc.Label("Stock Actual Manual:", html_for="edit-material-stock-input"),
-                        # El ID de este INPUT debe ser "stock"
-                        dbc.Input(id="edit-material-stock-input", type="number", min=0, step="any", placeholder="0.00")
+                        dbc.Input(id="edit-material-stock-input", type="number", min=0, step=0.01, value=0)
                     ]),
                     
                     # Columna del COSTO
                     dbc.Col([
                         dbc.Label("Costo Promedio Manual:", html_for="edit-material-cost-input"),
-                        # El ID de este INPUT debe ser "cost"
-                        dbc.Input(id="edit-material-cost-input", type="number", min=0, step="any", placeholder="0.00")
+                        dbc.Input(id="edit-material-cost-input", type="number", min=0, step=0.01, value=0)
                     ])
                 ], className="mb-2"),
                 html.Hr(),
 
                 dbc.Label("Alertar si Stock baja de:", html_for="edit-material-alert-input"),
-                dbc.Input(id="edit-material-alert-input", type="number", min=0, step="any", className="mt-2", placeholder="0.00"),
-                # Alerta modificada
+                dbc.Input(id="edit-material-alert-input", type="number", min=0, step=0.01, className="mt-2", value=0),
                 dbc.Alert("Nota: Ajustar el stock o costo manualmente anula el promedio ponderado. Úsalo solo para corregir errores.", color="warning", className="mt-3 fs-sm")
             ])),
             dbc.ModalFooter([
@@ -89,7 +87,42 @@ def get_layout():
             dbc.Tab(label="Inventario de Insumos", tab_id="sub-tab-material-inventory", children=[
                 html.Div(className="p-4", children=[
                     html.H3("Inventario Actual de Materia Prima"),
-                    html.Div(id='material-inventory-table-container')
+                    
+                    # --- INICIO DE MODIFICACIÓN: BORRADO MASIVO ---
+                    dbc.Button("Borrar Seleccionados", id="delete-selected-materials-btn", color="danger", n_clicks=0, className="mb-2"),
+                    html.Div(id='bulk-delete-materials-output'), # Para mostrar alertas
+
+                    # La DataTable ahora se define aquí
+                    dash_table.DataTable(
+                        id='material-inventory-table',
+                        columns=[
+                            {"name": "ID", "id": "material_id"}, {"name": "Nombre Insumo", "id": "name"},
+                            {"name": "Unidad", "id": "unit_measure"},
+                            {"name": "Stock Actual", "id": "current_stock", 'type': 'numeric', 'format': Format(precision=3, scheme=Scheme.fixed)},
+                            {"name": "Costo Promedio", "id": "average_cost", 'type': 'numeric', 'format': Format(precision=3, scheme=Scheme.fixed, symbol=Symbol.yes)},
+                            {"name": "Valor Inventario", "id": "valor_inventario", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed, symbol=Symbol.yes)},
+                            {"name": "Umbral Alerta", "id": "alert_threshold", 'type': 'numeric', 'format': Format(precision=3, scheme=Scheme.fixed)},
+                            {"name": "Editar", "id": "editar"}, {"name": "Eliminar", "id": "eliminar"},
+                        ],
+                        data=[], # Se inicializa vacía
+                        page_size=15, 
+                        sort_action='native', 
+                        filter_action='native',
+                        # Propiedades de selección
+                        row_selectable='multi',
+                        selected_rows=[],
+                        selected_row_ids=[],
+                        # Estilos
+                        style_cell={'textAlign': 'left'},
+                        style_data_conditional=[
+                            {'if': { 'filter_query': '{current_stock} <= {alert_threshold} && {alert_threshold} > 0', 'column_id': 'current_stock'}, 'backgroundColor': '#FFCCCB', 'color': 'black'}
+                        ],
+                        style_cell_conditional=[
+                            {'if': {'column_id': 'editar'}, 'cursor': 'pointer', 'textAlign': 'center'},
+                            {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer', 'textAlign': 'center'}
+                        ]
+                    )
+                    # --- FIN DE MODIFICACIÓN ---
                 ])
             ]), # Fin Tab Inventario
 
@@ -112,18 +145,15 @@ def get_layout():
                          dbc.Row([
                              dbc.Col(html.Div([
                                  dbc.Label("Stock Actual (Si ya tienes):", html_for="material-stock-input"),
-                                 # CORREGIDO: placeholder
-                                 dbc.Input(id="material-stock-input", type="number", min=0, step="any", placeholder="0.00")
+                                 dbc.Input(id="material-stock-input", type="number", min=0, step=0.01, value=0)
                              ]), width=4),
                              dbc.Col(html.Div([
-                                 dbc.Label("Costo por Unidad (De ese stock):", html_for="material-cost-input"),
-                                 # CORREGIDO: placeholder
-                                 dbc.Input(id="material-cost-input", type="number", min=0, step="any", placeholder="0.00")
+                                 dbc.Label("Costo Total (De ese stock inicial):", html_for="material-cost-input"),
+                                 dbc.Input(id="material-cost-input", type="number", min=0, step=0.01, value=0)
                              ]), width=4),
                              dbc.Col(html.Div([
                                 dbc.Label("Alertar si Stock baja de:", html_for="material-alert-input"),
-                                # CORREGIDO: placeholder
-                                dbc.Input(id="material-alert-input", type="number", min=0, step="any", placeholder="0.00")
+                                dbc.Input(id="material-alert-input", type="number", min=0, step=0.01, value=0)
                              ]), width=4),
                          ], className="mb-3"),
                         dbc.Button("Guardar Nuevo Insumo", id="save-material-button", color="success", n_clicks=0, className="mt-3")
@@ -146,12 +176,11 @@ def get_layout():
                          dbc.Row([
                              dbc.Col(html.Div([
                                  dbc.Label("Cantidad Comprada:", html_for="purchase-quantity-input"),
-                                 dbc.Input(id="purchase-quantity-input", type="number", min=0.001, step="any", placeholder="0.00")
+                                 dbc.Input(id="purchase-quantity-input", type="number", min=0, step=0.01, value=0)
                              ]), width=6),
                               dbc.Col(html.Div([
-                                 # --- CORRECCIÓN: Etiqueta cambiada ---
-                                 dbc.Label("Costo por Unidad:", html_for="purchase-cost-input"),
-                                 dbc.Input(id="purchase-cost-input", type="number", min=0, step="any", placeholder="0.00")
+                                 dbc.Label("Costo Total de la Compra:", html_for="purchase-cost-input"),
+                                 dbc.Input(id="purchase-cost-input", type="number", min=0, step=0.01, value=0)
                              ]), width=6),
                          ], className="mb-3"),
                          dbc.Row([
@@ -187,9 +216,6 @@ def get_layout():
 def register_callbacks(app):
 
     # Callback añadir material
-    # --- INICIO DEL CÓDIGO FALTANTE ---
-
-    # Callback añadir material
     @app.callback(
         Output('add-material-alert', 'children'),
         Output('store-data-signal', 'data', allow_duplicate=True),
@@ -211,38 +237,99 @@ def register_callbacks(app):
         if n_clicks is None or n_clicks < 1: raise PreventUpdate
         if not current_user.is_authenticated: raise PreventUpdate
 
-        user_id = current_user.id
+        user_id = int(current_user.id)
         if not name or not unit:
             return dbc.Alert("Nombre y Unidad de Medida son obligatorios.", color="warning"), dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
+        # --- LÓGICA COSTO TOTAL ---
         try:
             stock_f = float(stock) if stock is not None else 0
-            cost_f = float(cost) if cost is not None else 0
+            total_cost_f = float(cost) if cost is not None else 0 # 'cost' AHORA es el Costo Total
             alert_f = float(alert) if alert is not None else 0
-            if stock_f < 0 or cost_f < 0 or alert_f < 0:
+            
+            # Calcular el costo promedio por unidad
+            avg_cost_f = (total_cost_f / stock_f) if stock_f > 0 else 0
+            
+            if stock_f < 0 or total_cost_f < 0 or alert_f < 0:
                 raise ValueError("Valores numéricos no pueden ser negativos.")
         except (ValueError, TypeError):
-             return dbc.Alert("Stock inicial, Costo y Umbral deben ser números válidos no negativos.", color="danger"), dash.no_update, name, unit, stock, cost, alert
+             # Mensaje de error actualizado
+             return dbc.Alert("Stock, Costo Total y Umbral deben ser números válidos no negativos.", color="danger"), dash.no_update, name, unit, stock, cost, alert
 
         material_data = {
             'name': name.strip(),
             'unit_measure': unit,
             'current_stock': stock_f,
-            'average_cost': cost_f,
+            'average_cost': avg_cost_f, # <-- Guarda el costo promedio calculado
             'alert_threshold': alert_f,
             'is_active': True
         }
-
+        # --- FIN LÓGICA COSTO TOTAL ---
+        
         success, message = add_raw_material(material_data, user_id)
 
         if success:
             new_signal = (signal_data or 0) + 1
             # Limpiar campos en éxito
-            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, "", None, None, None, None
+            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, "", None, 0, 0, 0
         else:
             return dbc.Alert(message, color="danger"), dash.no_update, name, unit, stock, cost, alert
 
-# Callback guardar Compra
+    # Callback actualizar tabla inventario
+    @app.callback(
+        Output('material-inventory-table', 'data'), # <-- MODIFICADO
+        [Input('material-sub-tabs', 'active_tab'),
+         Input('store-data-signal', 'data')]
+    )
+    def update_material_inventory_table(active_sub_tab, signal_data):
+        if not current_user.is_authenticated: raise PreventUpdate
+
+        triggered_id = dash.callback_context.triggered_id
+        if triggered_id == 'material-sub-tabs' and active_sub_tab != 'sub-tab-material-inventory':
+            raise PreventUpdate
+        if active_sub_tab != 'sub-tab-material-inventory' and triggered_id != 'store-data-signal':
+             raise PreventUpdate
+
+        user_id = int(current_user.id)
+        materials_df = load_raw_materials(user_id, include_inactive=False)
+
+        if not materials_df.empty:
+             numeric_cols = ['current_stock', 'average_cost', 'alert_threshold']
+             for col in numeric_cols:
+                  materials_df[col] = pd.to_numeric(materials_df[col], errors='coerce').fillna(0)
+             materials_df['valor_inventario'] = materials_df['current_stock'] * materials_df['average_cost']
+             materials_df['editar'] = "✏️"
+             materials_df['eliminar'] = "🗑️"
+             materials_df['id'] = materials_df['material_id'] # <-- AÑADIDO PARA BORRADO MASIVO
+        else:
+             materials_df = pd.DataFrame(columns=['material_id', 'name', 'unit_measure', 'current_stock', 'average_cost', 'alert_threshold', 'valor_inventario', 'editar', 'eliminar', 'id'])
+
+        # --- MODIFICADO: Devuelve solo 'data' ---
+        return materials_df.to_dict('records')
+
+    # Callback poblar Dropdown de Compras
+    @app.callback(
+        Output('purchase-material-dropdown', 'options'),
+        [Input('material-sub-tabs', 'active_tab'),
+         Input('store-data-signal', 'data')]
+    )
+    def update_purchase_dropdown(active_sub_tab, signal_data):
+        if not current_user.is_authenticated: raise PreventUpdate
+        
+        triggered_id = dash.callback_context.triggered_id
+        if triggered_id == 'material-sub-tabs' and active_sub_tab != 'sub-tab-add-purchase':
+            raise PreventUpdate
+        if active_sub_tab != 'sub-tab-add-purchase' and triggered_id != 'store-data-signal':
+             raise PreventUpdate
+
+        user_id = int(current_user.id)
+        try:
+            return get_raw_material_options(user_id)
+        except Exception as e:
+            print(f"Error al cargar opciones de materia prima: {e}")
+            return []
+
+    # Callback guardar Compra
     @app.callback(
         Output('add-purchase-alert', 'children', allow_duplicate=True),
         Output('store-data-signal', 'data', allow_duplicate=True),
@@ -262,129 +349,43 @@ def register_callbacks(app):
         if n_clicks is None or n_clicks < 1: raise PreventUpdate
         if not current_user.is_authenticated: raise PreventUpdate
 
-        print("--- DEBUG: BOTÓN GUARDAR COMPRA PRESIONADO ---")
-        print(f"Material ID: {material_id} (Tipo: {type(material_id)})")
-        print(f"Quantity: {quantity} (Tipo: {type(quantity)})")
-        print(f"Cost: {cost} (Tipo: {type(cost)})")
-        print(f"Date String: {date_str} (Tipo: {type(date_str)})")
+        user_id = int(current_user.id)
 
-        user_id = current_user.id
-
-        # --- 1. CORRECCIÓN: Validación con 'is None' (acepta 0) ---
+        # --- LÓGICA COSTO TOTAL ---
         if material_id is None or quantity is None or cost is None or date_str is None:
              # Mensaje de alerta actualizado
-             return dbc.Alert("Insumo, Cantidad, Costo por Unidad y Fecha son obligatorios.", color="warning"), dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+             return dbc.Alert("Insumo, Cantidad, Costo Total y Fecha son obligatorios.", color="warning"), dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
-        # --- 2. CORRECCIÓN: Lógica de Costo por Unidad ---
         try:
             quantity_float = float(quantity)
-            cost_per_unit_float = float(cost) # 'cost' es ahora 'costo por unidad'
-            
-            # Calcular el costo total para la BD
-            total_cost_calculated = quantity_float * cost_per_unit_float 
-            
+            cost_total_float = float(cost) # 'cost' AHORA es el Costo Total
             purchase_datetime = datetime.strptime(date_str, '%Y-%m-%d')
             
-            if quantity_float <= 0 or cost_per_unit_float < 0:
+            if quantity_float <= 0 or cost_total_float < 0:
                  raise ValueError("Cantidad debe ser positiva y costo no negativo.")
         except (ValueError, TypeError):
               # Mensaje de alerta actualizado
-              return dbc.Alert("Cantidad o Costo por Unidad no son números válidos, o la fecha es incorrecta.", color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
+              return dbc.Alert("Cantidad o Costo Total no son números válidos, o la fecha es incorrecta.", color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
 
-        # --- 3. CORRECCIÓN: Guardar el costo total calculado ---
         purchase_data = {
             "material_id": material_id, "quantity_purchased": quantity_float,
-            "total_cost": total_cost_calculated, # Guardar el total
+            "total_cost": cost_total_float, # Guardar el costo total del input
             "purchase_date": purchase_datetime,
             "supplier": supplier.strip() if supplier else None,
             "notes": notes.strip() if notes else None
         }
+        # --- FIN LÓGICA COSTO TOTAL ---
 
         success, message = add_material_purchase(purchase_data, user_id)
 
         if success:
             new_signal = (signal_data or 0) + 1
             # Limpiar campos en éxito
-            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, None, None, None, None, None
+            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, None, 0, 0, None, None
         else:
              return dbc.Alert(message, color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
-    # Callback actualizar tabla inventario
-    @app.callback(
-        Output('material-inventory-table-container', 'children'),
-        [Input('material-sub-tabs', 'active_tab'),
-         Input('store-data-signal', 'data')]
-    )
-    def update_material_inventory_table(active_sub_tab, signal_data):
-        if not current_user.is_authenticated: raise PreventUpdate
 
-        triggered_id = dash.callback_context.triggered_id
-        if triggered_id == 'material-sub-tabs' and active_sub_tab != 'sub-tab-material-inventory':
-            raise PreventUpdate
-        if active_sub_tab != 'sub-tab-material-inventory' and triggered_id != 'store-data-signal':
-             raise PreventUpdate
-
-        user_id = current_user.id
-        materials_df = load_raw_materials(user_id, include_inactive=False)
-
-        if not materials_df.empty:
-             numeric_cols = ['current_stock', 'average_cost', 'alert_threshold']
-             for col in numeric_cols:
-                  materials_df[col] = pd.to_numeric(materials_df[col], errors='coerce').fillna(0)
-             materials_df['valor_inventario'] = materials_df['current_stock'] * materials_df['average_cost']
-             materials_df['editar'] = "✏️"
-             materials_df['eliminar'] = "🗑️"
-        else:
-             materials_df = pd.DataFrame(columns=['material_id', 'name', 'unit_measure', 'current_stock', 'average_cost', 'alert_threshold', 'valor_inventario', 'editar', 'eliminar'])
-
-        columns = [
-            {"name": "ID", "id": "material_id"}, {"name": "Nombre Insumo", "id": "name"},
-            {"name": "Unidad", "id": "unit_measure"},
-            {"name": "Stock Actual", "id": "current_stock", 'type': 'numeric', 'format': Format(precision=3, scheme=Scheme.fixed)},
-            {"name": "Costo Promedio", "id": "average_cost", 'type': 'numeric', 'format': Format(precision=3, scheme=Scheme.fixed, symbol=Symbol.yes)},
-            {"name": "Valor Inventario", "id": "valor_inventario", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed, symbol=Symbol.yes)},
-            {"name": "Umbral Alerta", "id": "alert_threshold", 'type': 'numeric', 'format': Format(precision=3, scheme=Scheme.fixed)},
-            {"name": "Editar", "id": "editar"}, {"name": "Eliminar", "id": "eliminar"},
-        ]
-
-        style_data_conditional = [
-            {'if': { 'filter_query': '{current_stock} <= {alert_threshold} && {alert_threshold} > 0', 'column_id': 'current_stock'}, 'backgroundColor': '#FFCCCB', 'color': 'black'}
-        ]
-        style_cell_conditional=[
-            {'if': {'column_id': 'editar'}, 'cursor': 'pointer', 'textAlign': 'center'},
-            {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer', 'textAlign': 'center'}
-        ]
-
-        return dash_table.DataTable(
-            id='material-inventory-table', columns=columns, data=materials_df.to_dict('records'),
-            page_size=15, sort_action='native', filter_action='native',
-            style_cell={'textAlign': 'left'},
-            style_data_conditional=style_data_conditional,
-            style_cell_conditional=style_cell_conditional
-        )
-
-    # Callback poblar Dropdown de Compras
-    @app.callback(
-        Output('purchase-material-dropdown', 'options'),
-        [Input('material-sub-tabs', 'active_tab'),
-         Input('store-data-signal', 'data')]
-    )
-    def update_purchase_dropdown(active_sub_tab, signal_data):
-        if not current_user.is_authenticated: raise PreventUpdate
-        
-        # Optimización: Solo cargar si la pestaña es la correcta
-        triggered_id = dash.callback_context.triggered_id
-        if triggered_id == 'material-sub-tabs' and active_sub_tab != 'sub-tab-add-purchase':
-            raise PreventUpdate
-        if active_sub_tab != 'sub-tab-add-purchase' and triggered_id != 'store-data-signal':
-             raise PreventUpdate
-
-        user_id = current_user.id
-        try:
-            return get_raw_material_options(user_id)
-        except Exception as e:
-            print(f"Error al cargar opciones de materia prima: {e}")
-            return []
-
+    # Callbacks para Modales Edit/Delete
     @app.callback(
         Output('material-edit-modal', 'is_open'), Output('material-delete-confirm-modal', 'is_open'),
         Output('store-material-id-to-edit', 'data'), Output('store-material-id-to-delete', 'data'),
@@ -403,7 +404,7 @@ def register_callbacks(app):
         row_idx = active_cell['row']; col_id = active_cell['column_id']
         if not data or row_idx >= len(data): raise PreventUpdate
 
-        material_id = data[row_idx]['material_id']
+        material_id = data[row_idx]['id'] # <-- Corregido para usar 'id'
         material_info = data[row_idx]
 
         open_edit, open_delete = False, False
@@ -422,7 +423,7 @@ def register_callbacks(app):
         elif col_id == 'eliminar':
             open_delete, delete_id = True, material_id
 
-        # CORREGIDO: El orden del return debe coincidir con los Outputs
+        # El orden del return debe coincidir con los Outputs
         # 9: edit_stock, 10: edit_cost
         return open_edit, open_delete, edit_id, delete_id, edit_name, edit_unit, edit_alert, edit_alert_msg, edit_stock, edit_cost
 
@@ -441,12 +442,12 @@ def register_callbacks(app):
          State('store-data-signal', 'data')],           # 7
         prevent_initial_call=True
     )
-    # --- CORRECCIÓN: Orden de argumentos en 'def' ---
+    # Orden de argumentos en 'def' corregido
     def save_edited_material(n_clicks, material_id, name, unit, alert, stock, cost, signal_data):
         if n_clicks is None or not material_id: raise PreventUpdate
         if not current_user.is_authenticated: raise PreventUpdate
 
-        user_id = current_user.id
+        user_id = int(current_user.id)
         if not name or not unit:
              return True, dash.no_update, dbc.Alert("Nombre y Unidad son obligatorios.", color="danger")
 
@@ -510,3 +511,32 @@ def register_callbacks(app):
         if triggered_id in ['cancel-edit-material-button', 'cancel-delete-material-button']:
             return False, False
         raise PreventUpdate
+
+    # --- NUEVO CALLBACK: BORRADO MASIVO DE INSUMOS ---
+    @app.callback(
+        Output('bulk-delete-materials-output', 'children'),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('delete-selected-materials-btn', 'n_clicks'),
+        [State('material-inventory-table', 'selected_row_ids'),
+         State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def delete_selected_materials(n_clicks, selected_ids, signal_data):
+        if n_clicks is None or n_clicks < 1 or not selected_ids:
+            raise PreventUpdate
+        
+        if not current_user.is_authenticated:
+            raise PreventUpdate
+        
+        user_id = int(current_user.id)
+        
+        try:
+            success, message = delete_materials_bulk(selected_ids, user_id)
+            if success:
+                new_signal = (signal_data or 0) + 1
+                return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal
+            else:
+                return dbc.Alert(message, color="danger", dismissable=True), dash.no_update
+        except Exception as e:
+            print(f"Error en borrado masivo de insumos: {e}")
+            return dbc.Alert("Ocurrió un error al intentar borrar los insumos.", color="danger", dismissable=True), dash.no_update

@@ -14,7 +14,8 @@ from datetime import datetime # Added for datetime objects
 from app import app
 from database import (
     load_sales, get_product_options, load_products, load_categories,
-    update_stock, update_sale, delete_sale, attempt_stock_deduction # Added attempt_stock_deduction
+    update_stock, update_sale, delete_sale, attempt_stock_deduction,
+    delete_sales_bulk # <-- Importación añadida
 )
 
 def get_layout():
@@ -54,7 +55,8 @@ def get_layout():
                  html.Div(id="sale-validation-alert"),
                  dbc.Row([
                      dbc.Col([html.Label("Selecciona un Producto"), dcc.Dropdown(id='product-dropdown', placeholder="Selecciona un producto...")], width=6),
-                     dbc.Col([html.Label("Cantidad Vendida"), dbc.Input(id='quantity-input', type='number', min=1, step="any", value=1)], width=6),
+                     # SIN PLACEHOLDER: 'value=1' se usa por defecto
+                     dbc.Col([html.Label("Cantidad Vendida"), dbc.Input(id='quantity-input', type='number', min=1, step=1, value=1)], width=6),
                  ], className="mb-3"),
                  dbc.Button("Registrar Venta", id="submit-sale-button", color="primary", n_clicks=0, className="mt-3")
              ])
@@ -62,7 +64,7 @@ def get_layout():
 
          dbc.Accordion([ # Import Sales Accordion
              dbc.AccordionItem(
-                 [
+                 children=[ # <-- Corregido para envolver en lista
                      dcc.Upload(
                          id='upload-sales-data',
                          children=html.Div(['Arrastra y suelta o ', html.A('Selecciona un Archivo')]),
@@ -92,10 +94,43 @@ def get_layout():
          ], start_collapsed=True, className="m-4"),
 
          dbc.Accordion([ # Sales History Accordion
-             dbc.AccordionItem([
-                 dbc.Button("Descargar Excel", id="btn-download-sales-excel", color="success", className="mb-3"),
-                 html.Div(id='history-table-container')
-             ], title="Ver Historial de Ventas")
+             # EN sales.py, DENTRO DE get_layout()
+            dbc.AccordionItem(
+                children=[ 
+                    dbc.Button("Descargar Excel", id="btn-download-sales-excel", color="success", className="mb-3 me-2"),
+                    dbc.Button("Borrar Seleccionados", id="delete-selected-sales-btn", color="danger", n_clicks=0, className="mb-3"),
+                    html.Div(id='bulk-delete-sales-output'),
+
+                    # --- INICIO DE LA CORRECCIÓN ---
+                    # Definimos la tabla aquí, en el layout, con data vacía
+                    dash_table.DataTable(
+                        id='history-table', # <-- El ID ahora existe en el layout
+                        columns=[
+                            {"name": "ID Venta", "id": "sale_id"},
+                            {"name": "Producto", "id": "product_name"},
+                            {"name": "Categoría", "id": "category_name"},
+                            {"name": "Cantidad", "id": "quantity"},
+                            {"name": "Monto Total", "id": "total_amount", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
+                            {"name": "Fecha", "id": "sale_date_display"}, 
+                            {"name": "Editar", "id": "editar"},
+                            {"name": "Eliminar", "id": "eliminar"}
+                        ],
+                        data=[], # <-- Se inicializa vacía
+                        page_size=10,
+                        sort_action='native',
+                        row_selectable='multi',
+                        selected_rows=[],
+                        selected_row_ids=[],
+                        sort_by=[{'column_id': 'sale_date_display', 'direction': 'desc'}],
+                        style_cell_conditional=[
+                            {'if': {'column_id': 'editar'}, 'cursor': 'pointer'},
+                            {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
+                        ]
+                    )
+                    # --- FIN DE LA CORRECCIÓN ---
+                ], 
+                title="Ver Historial de Ventas"
+             )
          ], start_collapsed=True, className="m-4")
      ])
 
@@ -105,7 +140,7 @@ def register_callbacks(app):
     # --- CALLBACK: Registrar Venta (con deducción atómica) ---
     @app.callback(
         Output('sale-validation-alert', 'children'),
-        Output('store-data-signal', 'data', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True), # <-- CORREGIDO: allow_duplicate añadido
         Input('submit-sale-button', 'n_clicks'),
         [State('product-dropdown', 'value'), State('quantity-input', 'value'),
          State('store-data-signal', 'data')],
@@ -115,7 +150,7 @@ def register_callbacks(app):
         if not current_user.is_authenticated or not all([prod_id, qty]):
             raise PreventUpdate
 
-        user_id = current_user.id
+        user_id = int(current_user.id) # Fix numpy.int64
         try:
             qty = int(qty)
             if qty <= 0:
@@ -168,39 +203,25 @@ def register_callbacks(app):
 
     # --- CALLBACK: Refrescar Tabla y Dropdowns ---
     @app.callback(
-        Output('history-table-container', 'children'),
+        Output('history-table', 'data'),
         Output('product-dropdown', 'options'),
         Output('edit-sale-product', 'options'),
         [Input('main-tabs', 'active_tab'), # Trigger 1
          Input('store-data-signal', 'data')] # Trigger 2
     )
     def refresh_sales_components(active_tab, signal_data):
-        # --- START OPTIMIZATION ---
-        # 1. Basic auth check
         if not current_user.is_authenticated:
              raise PreventUpdate
-
-        # 2. Check if the trigger was the tab input AND it's not the correct tab
         triggered_id = dash.callback_context.triggered_id
         if triggered_id == 'main-tabs' and active_tab != 'tab-sales':
-            raise PreventUpdate # Stop if only tab changed and it's not this one
-
-        # 3. If the trigger was the signal OR it was the tab input AND it IS this tab, proceed.
-        #    Also handles initial load when active_tab='tab-sales'
+            raise PreventUpdate
         if active_tab != 'tab-sales':
-             # This handles cases where the signal triggered while on another tab
              raise PreventUpdate
-        # --- END OPTIMIZATION ---
 
-        # Data loading now only happens if this tab is active or the signal changed
-        user_id = current_user.id
+        user_id = int(current_user.id) # Fix numpy.int64
         sales_df = load_sales(user_id)
-        # ... rest of the function ...
-
-        user_id = current_user.id
-        sales_df = load_sales(user_id) # Trae fechas como datetime
-        products_df = load_products(user_id) # Trae todos (activos e inactivos)
-        categories_df = load_categories(user_id) # Trae todas (activas e inactivas)
+        products_df = load_products(user_id)
+        categories_df = load_categories(user_id)
 
         df_show = pd.DataFrame()
         if not sales_df.empty:
@@ -211,37 +232,15 @@ def register_callbacks(app):
             df_show = df_show.rename(columns={'name_x': 'product_name', 'name_y': 'category_name'})
             df_show['product_name'] = df_show['product_name'].fillna('Producto Eliminado')
             df_show['category_name'] = df_show['category_name'].fillna('Sin Categoría')
-
-            # Formatear fecha para mostrar (usando .dt)
             df_show['sale_date_display'] = df_show['sale_date'].dt.strftime('%Y-%m-%d %H:%M')
-
             df_show['editar'] = "✏️"
             df_show['eliminar'] = "🗑️"
+            df_show['id'] = df_show['sale_id'] # <-- AÑADIDO PARA BORRADO MASIVO
 
-        table = dash_table.DataTable(
-            id='history-table',
-            columns=[
-                {"name": "ID Venta", "id": "sale_id"},
-                {"name": "Producto", "id": "product_name"},
-                {"name": "Categoría", "id": "category_name"},
-                {"name": "Cantidad", "id": "quantity"},
-                {"name": "Monto Total", "id": "total_amount", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
-                {"name": "Fecha", "id": "sale_date_display"}, # Usar columna formateada
-                {"name": "Editar", "id": "editar"},
-                {"name": "Eliminar", "id": "eliminar"}
-            ],
-            data=df_show.to_dict('records'),
-            page_size=10,
-            sort_action='native',
-            sort_by=[{'column_id': 'sale_date_display', 'direction': 'desc'}], # Ordenar por columna formateada
-            style_cell_conditional=[
-                {'if': {'column_id': 'editar'}, 'cursor': 'pointer'},
-                {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
-            ]
-        )
+        product_options = get_product_options(user_id)
 
-        product_options = get_product_options(user_id) # Obtiene solo activos
-        return table, product_options, product_options
+        # Simplemente devolvemos los datos para la tabla, no el componente
+        return df_show.to_dict('records'), product_options, product_options
 
     # --- CALLBACK: Descargar Excel ---
     @app.callback(
@@ -253,8 +252,8 @@ def register_callbacks(app):
         if n_clicks is None: raise PreventUpdate
         if not current_user.is_authenticated: raise PreventUpdate
 
-        user_id = current_user.id
-        sales_df = load_sales(user_id) # Trae fechas como datetime
+        user_id = int(current_user.id) # Fix numpy.int64
+        sales_df = load_sales(user_id)
         products_df = load_products(user_id)
         categories_df = load_categories(user_id)
 
@@ -262,9 +261,6 @@ def register_callbacks(app):
         if not categories_df.empty and not df.empty:
             df = pd.merge(df, categories_df, on='category_id', how='left')
         df = df.rename(columns={'name_x': 'product_name', 'name_y': 'category_name'})
-
-        # Formatear fecha para Excel si es necesario (Excel a veces maneja datetime bien)
-        # df['sale_date'] = df['sale_date'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
         return dcc.send_data_frame(df.to_excel, "historial_ventas.xlsx", sheet_name="Ventas", index=False)
 
@@ -281,7 +277,7 @@ def register_callbacks(app):
     def upload_sales_data(contents, filename, signal_data, update_stock_enabled):
         if not current_user.is_authenticated or contents is None: raise PreventUpdate
 
-        user_id = current_user.id
+        user_id = int(current_user.id) # Fix numpy.int64
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
 
@@ -293,33 +289,29 @@ def register_callbacks(app):
         except Exception as e:
             return dbc.Alert(f"Error al procesar el archivo: {e}", color="danger"), dash.no_update
 
-        required_columns = ['nombre', 'cantidad', 'fecha'] # <-- CAMBIADO
+        required_columns = ['nombre', 'cantidad', 'fecha'] 
         errors = []
         if not all(col in df.columns for col in required_columns):
-            # 2. Actualiza el mensaje de error
             return dbc.Alert(f"El archivo debe contener las columnas: {', '.join(required_columns)}", color="danger"), dash.no_update
         
-        # Usar get_product_options para obtener solo productos activos
         products_active_df = pd.DataFrame(get_product_options(user_id))
         if products_active_df.empty:
             return dbc.Alert("No hay productos activos para importar ventas.", color="warning"), dash.no_update
         products_active_df['name'] = products_active_df['label'].apply(lambda x: x.split(' (Stock:')[0])
         products_lookup = products_active_df.set_index('name')['value'].to_dict()
 
-        # Cargar todos los productos para precios/costos/stock
         all_products_db = load_products(user_id)
         prices_lookup = all_products_db.set_index('product_id')['price'].to_dict()
         costs_lookup = all_products_db.set_index('product_id')['cost'].to_dict()
-        stock_lookup = all_products_db.set_index('product_id')['stock'].to_dict() # Stock actual real
+        stock_lookup = all_products_db.set_index('product_id')['stock'].to_dict() 
 
         sales_to_insert = []
-        stock_updates_needed = {} # Guardar cambios de stock aquí {product_id: new_stock}
+        stock_updates_needed = {} 
 
         for index, row in df.iterrows():
-            # 3. Cambia los nombres para acceder a la fila
-            product_name = row['nombre']   # <-- CAMBIADO
-            quantity = row['cantidad'] # <-- CAMBIADO
-            sale_date = row['fecha']     #
+            product_name = row['nombre']
+            quantity = row['cantidad']
+            sale_date = row['fecha']
 
             if product_name not in products_lookup:
                 errors.append(f"Fila {index + 2}: El producto '{product_name}' no existe o está inactivo.")
@@ -337,21 +329,17 @@ def register_callbacks(app):
                 continue
 
             try:
-                # Convertir a datetime de Pandas primero para validación robusta
                 sale_date_dt = pd.to_datetime(sale_date)
-                # Convertir a datetime de Python para guardar en BD
                 sale_date_to_save = sale_date_dt.to_pydatetime()
             except (ValueError, TypeError):
                 errors.append(f"Fila {index + 2}: La fecha '{sale_date}' no tiene un formato válido.")
                 continue
 
             if update_stock_enabled:
-                # Usar el stock más reciente conocido (real o de updates_needed)
                 current_stock = stock_updates_needed.get(product_id, stock_lookup.get(product_id, 0))
                 if quantity > current_stock:
                     errors.append(f"Fila {index + 2}: Stock insuficiente para '{product_name}'. Stock: {current_stock}, Pedido: {quantity}")
                     continue
-                # Actualizar stock en memoria para la siguiente fila
                 stock_updates_needed[product_id] = current_stock - quantity
 
             price = prices_lookup.get(product_id, 0)
@@ -364,7 +352,7 @@ def register_callbacks(app):
                 'quantity': quantity,
                 'total_amount': total_amount,
                 'cogs_total': cogs_total,
-                'sale_date': sale_date_to_save, # Guardar como datetime
+                'sale_date': sale_date_to_save,
                 'user_id': user_id
             })
 
@@ -406,23 +394,22 @@ def register_callbacks(app):
         if not current_user.is_authenticated or not active_cell or 'row' not in active_cell:
             raise PreventUpdate
 
-        user_id = current_user.id
+        user_id = int(current_user.id) # Fix numpy.int64
         row_idx = active_cell['row']
         column_id = active_cell['column_id']
 
         if not data or row_idx >= len(data): raise PreventUpdate
         sale_id = data[row_idx]['sale_id']
 
-        sales_df = load_sales(user_id) # Trae fechas como datetime
+        sales_df = load_sales(user_id) 
         try:
             sale_info = sales_df[sales_df['sale_id'] == sale_id].iloc[0]
         except IndexError:
-             return False, False, None, None, dash.no_update, dash.no_update, dash.no_update # Venta no encontrada
+             return False, False, None, None, dash.no_update, dash.no_update, dash.no_update
 
         if column_id == "editar":
             product_value = int(sale_info['product_id']) if pd.notna(sale_info['product_id']) else None
             quantity_value = sale_info['quantity']
-            # Convertir timestamp a objeto date para el DatePickerSingle
             date_value = sale_info['sale_date'].date() if pd.notna(sale_info['sale_date']) else None
             return True, False, sale_id, None, product_value, quantity_value, date_value
 
@@ -440,14 +427,14 @@ def register_callbacks(app):
         [State('store-sale-id-to-edit', 'data'),
          State('edit-sale-product', 'value'),
          State('edit-sale-quantity', 'value'),
-         State('edit-sale-date', 'date'), # Viene como string 'YYYY-MM-DD'
+         State('edit-sale-date', 'date'), 
          State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
     def save_edited_sale(n, sale_id, new_product_id, new_quantity, sale_date_str, signal):
         if not n or not sale_id: raise PreventUpdate
 
-        user_id = current_user.id
+        user_id = int(current_user.id) # Fix numpy.int64
 
         if not all([new_product_id, new_quantity, sale_date_str]):
              return True, dash.no_update, dbc.Alert("Todos los campos son obligatorios.", color="danger")
@@ -456,12 +443,10 @@ def register_callbacks(app):
             new_quantity = int(new_quantity)
             if new_quantity <= 0:
                  return True, dash.no_update, dbc.Alert("La cantidad debe ser positiva.", color="danger")
-            # Convertir string de fecha a objeto datetime (a medianoche)
             sale_date_dt = datetime.strptime(sale_date_str, '%Y-%m-%d')
         except (ValueError, TypeError):
              return True, dash.no_update, dbc.Alert("Producto, cantidad o fecha no válida.", color="danger")
 
-        # Lógica de ajuste de stock
         try:
             sales_df = load_sales(user_id)
             original_sale_info = sales_df[sales_df['sale_id'] == sale_id].iloc[0]
@@ -470,9 +455,8 @@ def register_callbacks(app):
         except (IndexError, KeyError):
             return True, dash.no_update, dbc.Alert("Error: No se encontró la venta original.", color="danger")
 
-        products_df = load_products(user_id) # Cargar todos para stock
+        products_df = load_products(user_id) 
 
-        # Caso: Producto no cambió
         if original_product_id == new_product_id:
             quantity_diff = new_quantity - original_quantity
             if quantity_diff != 0:
@@ -485,28 +469,23 @@ def register_callbacks(app):
                 except (IndexError, KeyError):
                      return True, dash.no_update, dbc.Alert("Error: El producto ya no existe.", color="danger")
 
-        # Caso: Producto sí cambió
         else:
-            # Restaurar stock original
             if pd.notna(original_product_id):
                 try:
                     original_stock = products_df.loc[products_df['product_id'] == original_product_id, 'stock'].iloc[0]
                     restored_stock = original_stock + original_quantity
                     update_stock(original_product_id, restored_stock, user_id)
-                except (IndexError, KeyError): pass # Producto original no existe
+                except (IndexError, KeyError): pass 
 
-            # Descontar stock nuevo
             try:
                 new_product_stock = products_df.loc[products_df['product_id'] == new_product_id, 'stock'].iloc[0]
                 if new_quantity > new_product_stock:
-                    # NOTA: Stock original ya fue restaurado. Error.
                     return True, dash.no_update, dbc.Alert(f"Stock insuficiente para nuevo producto ({new_product_stock}). Stock original restaurado.", color="danger")
                 new_stock_val = new_product_stock - new_quantity
                 update_stock(new_product_id, new_stock_val, user_id)
             except (IndexError, KeyError):
                  return True, dash.no_update, dbc.Alert("Error: El nuevo producto seleccionado no existe.", color="danger")
 
-        # Actualizar datos de la venta
         try:
             product_info = products_df.loc[products_df['product_id'] == new_product_id].iloc[0]
         except IndexError:
@@ -517,7 +496,7 @@ def register_callbacks(app):
             "quantity": new_quantity,
             "total_amount": float(product_info['price'] * new_quantity),
             "cogs_total": float(product_info['cost'] * new_quantity),
-            "sale_date": sale_date_dt # Guardar como datetime
+            "sale_date": sale_date_dt
         }
         update_sale(sale_id, new_data, user_id)
 
@@ -534,11 +513,10 @@ def register_callbacks(app):
     def confirm_delete_sale(n, sale_id, signal):
         if not n or not sale_id: raise PreventUpdate
 
-        user_id = current_user.id
+        user_id = int(current_user.id) # Fix numpy.int64
         product_id_to_restore = None
         quantity_to_restore = 0
 
-        # Obtener info ANTES de borrar
         try:
             sales_df = load_sales(user_id)
             sale_info = sales_df[sales_df['sale_id'] == sale_id].iloc[0]
@@ -547,10 +525,8 @@ def register_callbacks(app):
         except (IndexError, KeyError):
             print(f"Advertencia: No se encontró la venta {sale_id} para restaurar stock.")
 
-        # Borrar la venta
         delete_sale(sale_id, user_id)
 
-        # Intentar restaurar stock
         if pd.notna(product_id_to_restore) and quantity_to_restore > 0:
             try:
                 products_df = load_products(user_id)
@@ -561,7 +537,6 @@ def register_callbacks(app):
                 print(f"Advertencia: No se pudo restaurar stock para producto {product_id_to_restore} (quizás ya no existe).")
             except Exception as e:
                  print(f"Error inesperado al restaurar stock para producto {product_id_to_restore}: {e}")
-
 
         return False, (signal or 0) + 1
 
@@ -574,8 +549,36 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def close_sale_modals(n_edit, n_delete):
-        # Si se presionó cualquier botón de cancelar, cerrar ambos
         triggered_id = dash.callback_context.triggered_id
         if triggered_id in ['cancel-edit-sale-button', 'cancel-delete-sale-button']:
             return False, False
         raise PreventUpdate
+
+    # --- NUEVO CALLBACK: BORRADO MASIVO DE VENTAS ---
+    @app.callback(
+        Output('bulk-delete-sales-output', 'children'),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('delete-selected-sales-btn', 'n_clicks'),
+        [State('history-table', 'selected_row_ids'),
+         State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def delete_selected_sales(n_clicks, selected_ids, signal_data):
+        if n_clicks is None or n_clicks < 1 or not selected_ids:
+            raise PreventUpdate
+        
+        if not current_user.is_authenticated:
+            raise PreventUpdate
+        
+        user_id = int(current_user.id)
+        
+        try:
+            success, message = delete_sales_bulk(selected_ids, user_id)
+            if success:
+                new_signal = (signal_data or 0) + 1
+                return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal
+            else:
+                return dbc.Alert(message, color="danger", dismissable=True), dash.no_update
+        except Exception as e:
+            print(f"Error en borrado masivo de ventas: {e}")
+            return dbc.Alert("Ocurrió un error al intentar borrar las ventas.", color="danger", dismissable=True), dash.no_update
