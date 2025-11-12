@@ -1,3 +1,4 @@
+# finances.py
 from dash import dcc, html, dash_table
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output
@@ -50,7 +51,7 @@ def get_layout():
                 dbc.Row([
                     dbc.Col(width=6, children=[
                         dbc.Card([
-                            dbc.CardHeader("Estado de Resultados (P&L)"),
+                            dbc.CardHeader("Resumen P&L"),
                             dbc.CardBody(
                                 dash_table.DataTable(
                                     id='pnl-table',
@@ -63,20 +64,16 @@ def get_layout():
                     ]),
                     dbc.Col(width=6, children=[
                         dbc.Card([
-                            dbc.CardHeader("Desglose de Gastos Operativos"), # <-- Título general
+                            dbc.CardHeader("Desglose de Gastos Operativos"),
                             dbc.CardBody([
                                 dbc.Tabs(id="expense-breakdown-tabs", active_tab="tab-visual", children=[
-
-                                    # Pestaña 1: El Gráfico de Pastel (Restaurado)
+                                    # Pestaña 1: El Gráfico de Pastel
                                     dbc.Tab(label="Resumen Visual", tab_id="tab-visual", children=[
                                         dcc.Graph(id='expense-pie-chart', style={'height': '350px'}, className="mt-3")
                                     ]),
-
                                     # Pestaña 2: La Tabla de Detalle
-# --- CÓDIGO CORREGIDO ---
                                     dbc.Tab(label="Detalle en Tabla", tab_id="tab-table", children=[
-                                        # Envolvemos la tabla en un html.Div para aplicar el margen
-                                        html.Div([ 
+                                        html.Div([
                                             dash_table.DataTable(
                                                 id='expense-detail-table',
                                                 columns=[
@@ -88,9 +85,8 @@ def get_layout():
                                                 sort_action='native',
                                                 sort_by=[{'column_id': 'Monto', 'direction': 'desc'}],
                                                 page_size=7
-                                                # className="mt-3" <-- ELIMINADO DE AQUÍ
                                             )
-                                        ], className="mt-3") # <-- Y AÑADIDO AL html.Div
+                                        ], className="mt-3")
                                     ]),
                                 ])
                             ])
@@ -99,7 +95,7 @@ def get_layout():
                 ], className="mb-4"),
                 dbc.Row([
                     dbc.Col(dbc.Card([
-                        dbc.CardHeader("Análisis de Rentabilidad por Producto"),
+                        dbc.CardHeader("Detalle de Ingresos y Costos (por Producto)"),
                         dbc.CardBody(dash_table.DataTable(
                             id='product-performance-table',
                             columns=[
@@ -112,6 +108,7 @@ def get_layout():
                             ],
                             page_size=10,
                             sort_action='native',
+                            # Scroll horizontal activado
                             style_table={'overflowX': 'auto'}
                         ))
                     ]))
@@ -123,11 +120,11 @@ def get_layout():
                 html.H3("Comparación entre Períodos", className="mb-4"),
                 dbc.Row([
                     dbc.Col(width=6, children=[
-                        html.H5("Período A"),
+                        html.H5("Período A (Anterior)"),
                         dcc.DatePickerRange(id='comparison-date-picker-a', start_date=start_of_last_month, end_date=end_of_last_month, display_format='YYYY-MM-DD')
                     ]),
                     dbc.Col(width=6, children=[
-                        html.H5("Período B"),
+                        html.H5("Período B (Actual)"),
                         dcc.DatePickerRange(id='comparison-date-picker-b', start_date=start_of_this_month, end_date=today, display_format='YYYY-MM-DD')
                     ])
                 ], className="mb-4"),
@@ -147,7 +144,7 @@ def register_callbacks(app):
         Output('gross-margin-card', 'children'),
         Output('net-margin-card', 'children'),
         Output('avg-ticket-card', 'children'),
-        Output('expense-pie-chart', 'figure'),    # <-- CORREGIDO: Output 5
+        Output('expense-pie-chart', 'figure'),
         Output('expense-detail-table', 'data'),
         Output('product-performance-table', 'data'),
         Output('finances-date-picker', 'disabled'),
@@ -181,40 +178,25 @@ def register_callbacks(app):
         net_margin_card = dbc.CardBody([html.H4("Margen Ganancia Neta", className="card-title"), html.H2(f"{results['net_margin']:.2f}%")])
         avg_ticket_card = dbc.CardBody([html.H4("Ticket de Venta Promedio", className="card-title"), html.H2(f"${results['avg_ticket']:,.2f}")])
 
-        expense_table_data = []
-        # --- INICIO DEL BLOQUE A AÑADIR (LÓGICA DEL GRÁFICO) ---
+        # --- Lógica de Gastos (Pie Chart + Tabla) ---
         fig_expenses = px.pie(title="Gastos por Categoría", names=['Sin Gastos'], values=[1]).update_traces(textinfo='none', hoverinfo='none')
-        # --- FIN DEL BLOQUE A AÑADIR ---
+        expense_table_data = []
 
         if not expenses_df.empty:
             exp_cat_df = load_expense_categories(user_id)
             if not exp_cat_df.empty:
                 expenses_with_names = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left')
                 expense_summary = expenses_with_names.groupby('name')['amount'].sum().reset_index()
-
-                # Lógica para la TABLA (ya la tienes)
-                expense_table_data = expense_summary.rename(
-                    columns={'name': 'Categoría', 'amount': 'Monto'}
-                ).to_dict('records')
-
-                # --- INICIO DEL BLOQUE A AÑADIR (LÓGICA DEL GRÁFICO) ---
-                # Lógica para el GRÁFICO
+                
+                # Gráfico
                 fig_expenses = px.pie(expense_summary, names='name', values='amount', title="Gastos por Categoría", hole=.3)
-                fig_expenses.update_layout(margin=dict(t=30, b=0, l=0, r=0))
-                # --- FIN DEL BLOQUE A AÑADIR ---
-        
-        if not expenses_df.empty:
-            exp_cat_df = load_expense_categories(user_id)
-            if not exp_cat_df.empty:
-                expenses_with_names = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left')
-                # Agrupar, sumar, y renombrar para la tabla
-                expense_summary = expenses_with_names.groupby('name')['amount'].sum().reset_index()
-                expense_summary = expense_summary.rename(columns={'name': 'Categoría', 'amount': 'Monto'})
-                # Opcional: añadir fila de Total
-                # total_gastos = pd.DataFrame([{'Categoría': 'Total Gastos Operativos', 'Monto': expense_summary['Monto'].sum()}])
-                # expense_summary = pd.concat([expense_summary, total_gastos], ignore_index=True)
-                expense_table_data = expense_summary.to_dict('records')
+                
+                # Tabla
+                expense_table_data = expense_summary.rename(columns={'name': 'Categoría', 'amount': 'Monto'}).to_dict('records')
+                
+        fig_expenses.update_layout(margin=dict(t=30, b=0, l=0, r=0))
 
+        # --- Lógica de Productos ---
         product_performance_data = []
         if not merged_df.empty:
             prod_perf = merged_df.groupby('name').agg(
@@ -236,9 +218,8 @@ def register_callbacks(app):
                 'ganancia_bruta': 'Ganancia Bruta', 'rentabilidad_%': 'Rentabilidad (%)'
             }).to_dict('records')
 
-        # --- ORDEN CORREGIDO ---
         return pnl_data, gross_margin_card, net_margin_card, avg_ticket_card, fig_expenses, expense_table_data, product_performance_data, date_picker_disabled
-
+        
     @app.callback(
         Output('comparison-card-ingresos', 'children'),
         Output('comparison-cards-container', 'children'),
@@ -258,25 +239,22 @@ def register_callbacks(app):
         data_a = calculate_financials(start_a, end_a, user_id)
         data_b = calculate_financials(start_b, end_b, user_id)
 
+        # --- Función de Tarjetas Mejorada (Texto fuera de la barra) ---
         def create_comparison_card(title, val_a, val_b, format_str, is_percent=False, invert_colors=False):
             diff = val_b - val_a
             
             color_good = "success"
             color_bad = "danger"
-            
-            if invert_colors:
-                color_good, color_bad = color_bad, color_good
+            if invert_colors: color_good, color_bad = color_bad, color_good
             
             if val_a == 0 and val_b != 0:
-                pct_change_str, color = " (Nuevo)", "success"
+                pct_change_str, color = " (Nuevo)", color_good
             elif val_a != 0 and val_b == 0:
                 pct_change_str, color = f" (▼ 100.00%)", color_bad
             elif val_a != 0:
                 pct_change = (diff / abs(val_a)) * 100
-                if diff > 0:
-                    pct_change_str, color = f" (▲ {pct_change:.2f}%)", color_good
-                else:
-                    pct_change_str, color = f" (▼ {abs(pct_change):.2f}%)", color_bad
+                if diff > 0: pct_change_str, color = f" (▲ {pct_change:.2f}%)", color_good
+                else: pct_change_str, color = f" (▼ {abs(pct_change):.2f}%)", color_bad
             else:
                 pct_change_str, color = " (=)", "secondary"
 
@@ -285,18 +263,30 @@ def register_callbacks(app):
             label_b = f"{format_str.format(val_b)}{suffix}"
             
             max_val = max(abs(val_a), abs(val_b))
-            val_a_pct, val_b_pct = (0, 0) if max_val == 0 else ((abs(val_a) / max_val * 100), (abs(val_b) / max_val * 100))
+            val_a_pct = (abs(val_a) / max_val * 100) if max_val > 0 else 0
+            val_b_pct = (abs(val_b) / max_val * 100) if max_val > 0 else 0
 
+            # DISEÑO NUEVO: Etiquetas encima de las barras para máxima legibilidad
             return dbc.Card([
-                    dbc.CardHeader(title),
+                    dbc.CardHeader(title, className="fw-bold"),
                     dbc.CardBody([
-                        html.P("Período A", className="card-text fw-bold"),
-                        dbc.Progress(label=label_a, value=val_a_pct, color="danger" if val_a < 0 else "secondary", className="mb-2"),
-                        html.P("Período B", className="card-text fw-bold mt-3"),
-                        dbc.Progress(label=label_b, value=val_b_pct, color="danger" if val_b < 0 else "primary", className="mb-2"),
-                        html.H5(html.Span(pct_change_str, className=f"text-{color} mt-3 d-block"))
+                        # Periodo A
+                        html.Div([
+                            html.Span("Período A (Anterior)", className="text-muted small"),
+                            html.Span(label_a, className="float-end fw-bold text-secondary")
+                        ], className="mb-1"),
+                        dbc.Progress(value=val_a_pct, color="secondary", className="mb-3", style={"height": "8px"}),
+                        
+                        # Periodo B
+                        html.Div([
+                            html.Span("Período B (Actual)", className="text-muted small"),
+                            html.Span(label_b, className="float-end fw-bold text-dark")
+                        ], className="mb-1"),
+                        dbc.Progress(value=val_b_pct, color="#32a852", className="mb-2", style={"height": "8px"}), # Verde marca
+                        
+                        html.H5(html.Span(pct_change_str, className=f"text-{color} mt-3 d-block text-end"))
                     ])
-                ])
+                ], className="shadow-sm border-0")
 
         top_row = [
             dbc.Col(create_comparison_card("Ingresos Totales", data_a['total_revenue'], data_b['total_revenue'], "${:,.2f}"), width=9),
@@ -304,28 +294,28 @@ def register_callbacks(app):
         ]
 
         col_volumen = dbc.Col([
-            html.H4("Volumen y Clientes", className="mb-3"),
+            html.H5("Volumen", className="mb-3 text-muted"),
             create_comparison_card("Número de Ventas", data_a['num_sales'], data_b['num_sales'], "{:,.0f}"),
             html.Div(className="mt-3"),
             create_comparison_card("Unidades Vendidas", data_a['unidades_vendidas'], data_b['unidades_vendidas'], "{:,.0f}")
         ], width=3)
 
         col_costos = dbc.Col([
-            html.H4("Costos", className="mb-3"),
+            html.H5("Costos", className="mb-3 text-muted"),
             create_comparison_card("Costo de Productos", data_a['total_cogs'], data_b['total_cogs'], "${:,.2f}", invert_colors=True),
             html.Div(className="mt-3"),
             create_comparison_card("Gastos Operativos", data_a['total_expenses'], data_b['total_expenses'], "${:,.2f}", invert_colors=True)
         ], width=3)
         
         col_ganancias = dbc.Col([
-            html.H4("Ganancias ($)", className="mb-3"),
+            html.H5("Ganancias ($)", className="mb-3 text-muted"),
             create_comparison_card("Ganancia Bruta", data_a['gross_profit'], data_b['gross_profit'], "${:,.2f}"),
             html.Div(className="mt-3"),
             create_comparison_card("Ganancia Neta", data_a['net_profit'], data_b['net_profit'], "${:,.2f}")
         ], width=3)
 
         col_margenes = dbc.Col([
-            html.H4("Márgenes (%)", className="mb-3"),
+            html.H5("Márgenes (%)", className="mb-3 text-muted"),
             create_comparison_card("Margen Bruto", data_a['gross_margin'], data_b['gross_margin'], "{:.2f}", is_percent=True),
             html.Div(className="mt-3"),
             create_comparison_card("Margen Neto", data_a['net_margin'], data_b['net_margin'], "{:.2f}", is_percent=True)
@@ -333,48 +323,34 @@ def register_callbacks(app):
         
         bottom_rows_layout = [col_volumen, col_costos, col_ganancias, col_margenes]
         
+        # --- GRÁFICOS MEJORADOS (Minimalistas) ---
         products_df = load_products(user_id)
         
-        sales_df_a = data_a['sales_df']
-        if not sales_df_a.empty:
-            merged_a = pd.merge(sales_df_a, products_df, on='product_id')
-            top_5_a = merged_a.groupby('name')['quantity'].sum().nlargest(5).sort_values(ascending=False)
-            fig_a = px.bar(top_5_a, x=top_5_a.values, y=top_5_a.index, orientation='h', 
-                           title=f"Top 5 Productos (Período A)",
-                           labels={'y': '', 'x': 'Unidades Vendidas'}, text_auto=True,
-                           color_discrete_sequence=['#6c757d'])
-            fig_a.update_layout(
-                xaxis=dict(autorange='reversed'),
-                yaxis=dict(side='right', autorange='reversed'),
-                margin=dict(l=20, r=150, t=40, b=20),
-                yaxis_title=None
+        def create_top_products_chart(sales_df, title, color_hex):
+            if sales_df.empty:
+                return px.bar(title=title).update_layout(
+                    annotations=[dict(text="Sin datos", showarrow=False)], 
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
+                )
+            
+            merged = pd.merge(sales_df, products_df, on='product_id')
+            top_5 = merged.groupby('name')['quantity'].sum().nlargest(5).sort_values(ascending=True) # Ascendente para que el mayor quede arriba en horizontal
+            
+            fig = px.bar(top_5, x=top_5.values, y=top_5.index, orientation='h', 
+                           title=title, text_auto=True)
+            
+            fig.update_traces(marker_color=color_hex, textposition='outside')
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(family="Poppins, sans-serif"),
+                margin=dict(l=20, r=50, t=50, b=20),
+                xaxis=dict(showgrid=False, showticklabels=False, title=None),
+                yaxis=dict(showgrid=False, title=None)
             )
-        else:
-            fig_a = px.bar(title="Top 5 Productos Vendidos (Período A)").update_layout(
-                annotations=[dict(text="Sin datos de ventas", showarrow=False)],
-                margin=dict(l=20, r=20, t=40, b=20)
-            )
+            return fig
 
-        sales_df_b = data_b['sales_df']
-        if not sales_df_b.empty:
-            merged_b = pd.merge(sales_df_b, products_df, on='product_id')
-            top_5_b = merged_b.groupby('name')['quantity'].sum().nlargest(5).sort_values(ascending=False)
-            fig_b = px.bar(top_5_b, x=top_5_b.values, y=top_5_b.index, orientation='h',
-                           title=f"Top 5 Productos (Período B)",
-                           labels={'y': '', 'x': 'Unidades Vendidas'}, text_auto=True,
-                           color_discrete_sequence=['#0d6efd'])
-            fig_b.update_layout(
-                yaxis=dict(autorange='reversed'),
-                xaxis_title="Unidades Vendidas",
-                margin=dict(l=150, r=20, t=40, b=20),
-                yaxis_title=None,
-                title_x=0,
-                title_xanchor='left'
-            )
-        else:
-            fig_b = px.bar(title="Top 5 Productos Vendidos (Período B)").update_layout(
-                annotations=[dict(text="Sin datos de ventas", showarrow=False)],
-                margin=dict(l=20, r=20, t=40, b=20)
-            )
+        # Color Gris para Periodo A, Verde Marca para Periodo B
+        fig_a = create_top_products_chart(data_a['sales_df'], "Top 5 Productos (Período A)", "#95a5a6")
+        fig_b = create_top_products_chart(data_b['sales_df'], "Top 5 Productos (Período B)", "#32a852")
 
         return top_row, bottom_rows_layout, fig_a, fig_b

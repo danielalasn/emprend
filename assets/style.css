@@ -1,0 +1,120 @@
+/* assets/style.css */
+
+/* 1. IMPORTAR FUENTE MODERNA (Poppins) */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
+
+:root {
+    --brand-color: #32a852;       /* Tu verde */
+    --brand-dark: #26803e;        /* Verde más oscuro para hover */
+    --bg-color: #f4f6f8;          /* Gris muy suave de fondo */
+    --text-dark: #2c3e50;         /* Color de texto principal */
+    --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+body {
+    background-color: var(--bg-color);
+    font-family: 'Poppins', sans-serif;
+    color: var(--text-dark);
+}
+
+/* 2. ESTILO DE ENCABEZADO (H1, H2...) */
+h1, h2, h3, h4, h5 {
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+/* 3. ESTILO DE LAS TARJETAS (CARDS) */
+.card {
+    border: none;
+    border-radius: 12px; /* Bordes redondeados */
+    box-shadow: var(--card-shadow);
+    transition: transform 0.2s ease;
+    background-color: white;
+}
+
+.card-header {
+    background-color: white;
+    border-bottom: 1px solid #eee;
+    font-weight: 600;
+    border-radius: 12px 12px 0 0 !important;
+    padding-top: 15px;
+    padding-bottom: 15px;
+}
+
+/* 4. PESTAÑAS (TABS) PERSONALIZADAS */
+.nav-tabs {
+    border-bottom: 2px solid #e0e0e0;
+    margin-bottom: 20px;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    color: #6c757d;
+    font-weight: 500;
+    padding: 12px 20px;
+    transition: all 0.3s ease;
+}
+
+.nav-tabs .nav-link:hover {
+    color: var(--brand-color);
+}
+
+/* La pestaña activa se pinta de tu verde y tiene una linea abajo */
+.nav-tabs .nav-link.active {
+    color: var(--brand-color);
+    border-bottom: 3px solid var(--brand-color);
+    background-color: transparent;
+    font-weight: 600;
+}
+
+/* 5. BOTONES (Reemplazamos los colores default por los tuyos) */
+.btn-primary {
+    background-color: var(--brand-color);
+    border-color: var(--brand-color);
+    box-shadow: 0 2px 4px rgba(50, 168, 82, 0.3);
+}
+
+.btn-primary:hover, .btn-primary:focus, .btn-primary:active {
+    background-color: var(--brand-dark) !important;
+    border-color: var(--brand-dark) !important;
+}
+
+.btn-success {
+    background-color: #27ae60; /* Un verde complementario */
+    border: none;
+}
+
+/* 6. TABLAS (DASH DATATABLE) */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner th {
+    background-color: #f8f9fa !important;
+    color: var(--text-dark) !important;
+    font-weight: 600 !important;
+    border-bottom: 2px solid #eee !important;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    padding: 12px !important;
+}
+
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td {
+    padding: 10px !important;
+    border-bottom: 1px solid #f1f1f1 !important;
+    font-size: 0.9rem;
+}
+
+/* Hover en las filas de la tabla */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner tr:hover td {
+    background-color: #f1f8f3 !important; /* Verde muy muy suave */
+}
+
+/* 7. PEQUEÑOS DETALLES */
+/* Hacer los inputs un poco más modernos */
+.form-control, .Select-control {
+    border-radius: 8px;
+    padding: 10px;
+    border: 1px solid #ced4da;
+}
+
+.form-control:focus {
+    border-color: var(--brand-color);
+    box-shadow: 0 0 0 0.2rem rgba(50, 168, 82, 0.25);
+}

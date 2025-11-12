@@ -142,6 +142,7 @@ def get_layout():
                         ],
                         data=[], # Se inicializa vacía
                         hidden_columns=['product_id'], 
+                        css=[{"selector": ".show-hide", "rule": "display: none"}],
                         page_size=15, 
                         sort_action='native', 
                         filter_action='native',
