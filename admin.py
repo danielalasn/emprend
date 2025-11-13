@@ -25,14 +25,13 @@ def get_layout():
     today = date.today()
     one_month_later = today + timedelta(days=30)
 
-    return html.Div([
-        dcc.Store(id='admin-user-id-store'), # Almacena el ID del usuario seleccionado
-        dcc.Store(id='admin-username-store'), # Almacena el nombre de usuario para confirmación
+    return html.Div(className="p-2 p-md-4", children=[ # Padding responsivo
+        dcc.Store(id='admin-user-id-store'), 
+        dcc.Store(id='admin-username-store'), 
 
-        # --- Modales de Confirmación ---
+        # --- Modales (Sin cambios estructurales) ---
         dbc.Modal([
             dbc.ModalHeader("Confirmar Reseteo de Contraseña"),
-            # Cuerpo del modal con texto e input para reset
             dbc.ModalBody([
                 html.P(id='admin-reset-modal-text'),
                 dbc.Label("Nueva Contraseña Temporal:", className="mt-2"),
@@ -46,10 +45,9 @@ def get_layout():
 
         dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación Permanente de Usuario"),
-            # Cuerpo del modal con texto, alerta e input para delete
             dbc.ModalBody([
-                html.P(id='admin-delete-modal-text'), # Texto de advertencia
-                html.Div(id='admin-delete-modal-alert', className="mt-2"), # Alerta interna
+                html.P(id='admin-delete-modal-text'), 
+                html.Div(id='admin-delete-modal-alert', className="mt-2"), 
                 dbc.Label("Para confirmar, escribe la frase exacta:", className="mt-3 fw-bold"),
                 dbc.Input(id="admin-delete-confirm-input", type="text", placeholder="eliminar [nombre de usuario]", className="mb-2")
             ]),
@@ -59,7 +57,6 @@ def get_layout():
             ]),
         ], id="admin-delete-modal", is_open=False),
 
-        # --- NUEVO MODAL: Extender Suscripción ---
         dbc.Modal([
             dbc.ModalHeader("Extender Suscripción"),
             dbc.ModalBody([
@@ -72,16 +69,14 @@ def get_layout():
                     date=one_month_later,
                     display_format='YYYY-MM-DD',
                     className="w-100",
-                    disabled=False # Empezará habilitado
+                    disabled=False 
                 ),
-                # --- AÑADIDO: Switch para 'Sin Vencimiento' en el modal ---
                 dbc.Switch(
                     id="admin-extend-no-expiry-switch",
                     label="Sin fecha de vencimiento (permanente)",
-                    value=False, # Por defecto, SÍ se establecerá una fecha
+                    value=False, 
                     className="my-2"
                 ),
-                # --- FIN AÑADIDO ---
             ]),
              dbc.ModalFooter([
                 dbc.Button("Cancelar", id="admin-cancel-extend-button", color="secondary"),
@@ -90,56 +85,58 @@ def get_layout():
         ], id="admin-extend-modal", is_open=False),
 
 
-        # --- Layout Principal ---
+        # --- Layout Principal Responsivo ---
         dbc.Row([
             # Columna Izquierda: Crear Usuario
-            dbc.Col(width=4, children=[
-                dbc.Card([
-                    dbc.CardHeader(html.H4("Crear Nuevo Usuario")),
+            # xs=12 (Celular: ancho completo) | md=4 (PC: 1/3 de ancho)
+            dbc.Col([
+                dbc.Card(className="shadow-sm border-0 h-100", children=[ # Estilo consistente
+                    dbc.CardHeader(html.H4("Crear Nuevo Usuario", className="m-0")),
                     dbc.CardBody([
                         html.Div(id="admin-create-alert"),
-                        dbc.Label("Nombre de Usuario:"),
+                        dbc.Label("Nombre de Usuario:", className="fw-bold small"),
                         dbc.Input(id="admin-new-username", type="text", className="mb-2"),
-                        dbc.Label("Contraseña Temporal:"),
+                        dbc.Label("Contraseña Temporal:", className="fw-bold small"),
                         dbc.Input(id="admin-new-password", type="text", className="mb-2"),
-# --- AÑADIDO: Date picker para fecha de suscripción ---
-                        dbc.Label("Vencimiento Suscripción:"),
+
+                        dbc.Label("Vencimiento Suscripción:", className="fw-bold small"),
                         dcc.DatePickerSingle(
                             id='admin-subscription-date-picker',
                             min_date_allowed=today,
                             initial_visible_month=today,
                             date=one_month_later,
                             display_format='YYYY-MM-DD',
-                            className="w-100", # Quitamos mb-2
-                            disabled=False # Empezará habilitado
+                            className="w-100", 
+                            disabled=False 
                         ),
-                        # --- AÑADIDO: Switch para 'Sin Vencimiento' ---
+                        
                         dbc.Switch(
                             id="admin-no-expiry-switch",
                             label="Sin fecha de vencimiento",
-                            value=False, # Por defecto, SÍ tiene fecha
-                            className="my-2" # Margen arriba y abajo
+                            value=False, 
+                            className="my-2 small text-muted" 
                         ),
-                        # --- FIN AÑADIDO ---
+                        
                         dbc.Switch(
                             id="admin-is-admin-switch",
-                            # ... (resto del switch de admin)
                             label="¿Es Administrador?",
                             value=False,
-                            className="mb-3"
+                            className="mb-3 small text-muted"
                         ),
                         dbc.Button("Crear Usuario", id="admin-create-user-button", color="primary", className="w-100")
                     ])
                 ])
-            ]),
+            ], xs=12, md=4, className="mb-4 mb-md-0"), # Margen inferior solo en móvil
 
             # Columna Derecha: Lista de Usuarios
-            dbc.Col(width=8, children=[
-                dbc.Card([
-                    dbc.CardHeader(html.H4("Gestionar Usuarios")),
+            # xs=12 (Celular) | md=8 (PC: 2/3 de ancho)
+            dbc.Col([
+                dbc.Card(className="shadow-sm border-0 h-100", children=[
+                    dbc.CardHeader(html.H4("Gestionar Usuarios", className="m-0")),
                     dbc.CardBody([
                         html.Div(id="admin-action-alert"),
-                        # --- CORREGIDO: Div con scroll para la tabla ---
+                        
+                        # Tabla con scroll horizontal
                         html.Div(
                             dash_table.DataTable(
                                 id='admin-users-table',
@@ -148,11 +145,11 @@ def get_layout():
                                     {"name": "Usuario", "id": "username"},
                                     {"name": "Admin", "id": "is_admin"},
                                     {"name": "Bloqueado", "id": "is_blocked"},
-                                    {"name": "Vencimiento", "id": "subscription_end_date_display", "type": "datetime"}, # <-- NUEVO
+                                    {"name": "Vencimiento", "id": "subscription_end_date_display", "type": "datetime"}, 
                                     {"name": "Forzar Pass", "id": "must_change_password"},
                                     {"name": "Bloquear", "id": "action-block", "presentation": "markdown"},
                                     {"name": "Resetear", "id": "action-reset", "presentation": "markdown"},
-                                    {"name": "Extender", "id": "action-extend", "presentation": "markdown"}, # <-- NUEVO
+                                    {"name": "Extender", "id": "action-extend", "presentation": "markdown"}, 
                                     {"name": "Eliminar", "id": "action-delete", "presentation": "markdown"},
                                 ],
                                 data=[],
@@ -163,8 +160,13 @@ def get_layout():
                                     { 'if': { 'filter_query': '{subscription_status} = "Expirado"', 'column_id': 'subscription_end_date_display'}, 'backgroundColor': '#FFCCCB', 'color': 'black'},
                                     { 'if': { 'filter_query': '{subscription_status} = "Expira Pronto"', 'column_id': 'subscription_end_date_display'}, 'backgroundColor': '#FFFFE0', 'color': 'black'}
                                 ],
-                                style_cell={'textAlign': 'left', 'minWidth': '80px', 'width': '100px', 'maxWidth': '150px', 'overflow': 'hidden', 'textOverflow': 'ellipsis'}, # Estilos de celda base
-                                style_cell_conditional=[ # Estilos específicos por columna
+                                # Estilos de celda optimizados para móvil
+                                style_cell={
+                                    'textAlign': 'left', 
+                                    'minWidth': '80px', 'width': '100px', 'maxWidth': '150px', 
+                                    'overflow': 'hidden', 'textOverflow': 'ellipsis'
+                                },
+                                style_cell_conditional=[ 
                                     {'if': {'column_id': 'action-block'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'},
                                     {'if': {'column_id': 'action-reset'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'},
                                     {'if': {'column_id': 'action-extend'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'},
@@ -174,12 +176,11 @@ def get_layout():
                                 ],
                                 markdown_options={"html": True}
                             ),
-                            # Aplicar scroll al Div contenedor
-                            style={'overflowX': 'auto', 'width': '100%'}
+                            style={'overflowX': 'auto', 'width': '100%'} # Scroll horizontal crítico
                         )
                     ])
                 ])
-            ])
+            ], xs=12, md=8)
         ])
     ])
 
