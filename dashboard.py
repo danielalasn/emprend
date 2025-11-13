@@ -19,19 +19,24 @@ def get_layout():
     # Estilo común para las tarjetas de KPIs
     card_style = {"border": "none", "borderRadius": "10px"}
     
-    return html.Div(className="p-4", children=[
+    return html.Div(className="p-2 p-md-4", children=[ # PADDING RESPONSIVO: p-2 en cel, p-4 en PC
+        
         # --- FILA 1: FILTRO DE FECHA ---
         dbc.Row([
-            dbc.Col(html.H4("Dashboard General", className="fw-bold text-secondary"), width='auto'),
+            # En celular (xs) ocupa 12 columnas (todo el ancho), en escritorio (md) se ajusta al contenido
+            dbc.Col(html.H4("Dashboard General", className="fw-bold text-secondary"), xs=12, md='auto', className="mb-2 mb-md-0"),
+            
             dbc.Col(
                 dcc.DatePickerRange(
                     id='dashboard-date-picker',
                     start_date=start_of_month,
                     end_date=today,
                     display_format='YYYY-MM-DD',
-                    style={'fontSize': '14px'}
+                    style={'fontSize': '14px'},
+                    className="w-100" # Clase CSS para asegurar ancho completo en móvil
                 ),
-            width=True, className="ps-4"),
+            xs=12, md=True, className="ps-md-4 mb-2 mb-md-0"), # Margen izquierdo solo en PC
+            
             dbc.Col(
                 dbc.Switch(
                     id="dashboard-see-all-switch",
@@ -39,10 +44,11 @@ def get_layout():
                     value=True,
                     className="text-muted small"
                 ),
-            width="auto")
+            xs=12, md="auto")
         ], align="center", className="mb-4"),
 
-        # --- FILA 2: KPIs FINANCIEROS (Ahora con Gastos) ---
+        # --- FILA 2: KPIs FINANCIEROS (RESPONSIVO) ---
+        # Cambio clave: xs=12 (celular: 1 por fila), sm=6 (tablet: 2 por fila), lg=3 (PC: 4 por fila)
         dbc.Row([
             # 1. Ingresos
             dbc.Col(dbc.Card([
@@ -50,7 +56,7 @@ def get_layout():
                     html.H6("Ingresos Totales", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H2(id="kpi-total-revenue", className="card-title fw-bold text-dark")
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
 
             # 2. Ganancia Bruta
             dbc.Col(dbc.Card([
@@ -58,26 +64,26 @@ def get_layout():
                     html.H6("Ganancia Bruta", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H2(id="kpi-gross-profit", className="card-title fw-bold text-success")
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
 
-            # 3. Gastos (NUEVO)
+            # 3. Gastos
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Gastos Operativos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H2(id="kpi-total-expenses", className="card-title fw-bold text-danger")
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
 
-            # 4. Ganancia Neta (Color dinámico en callback)
+            # 4. Ganancia Neta
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Ganancia Neta", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
-                    html.H2(id="kpi-net-profit", className="card-title fw-bold") # Clase de color se asigna en callback
+                    html.H2(id="kpi-net-profit", className="card-title fw-bold") 
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
-        ], className="mb-4 g-3"),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3),
+        ], className="mb-4 g-3"), # g-3 maneja el espacio entre columnas automáticamente
 
-        # --- FILA 3: KPIs DE INVENTARIO Y ALERTAS ---
+        # --- FILA 3: KPIs DE INVENTARIO Y ALERTAS (RESPONSIVO) ---
         dbc.Row([
             # KPI Inversión Productos
             dbc.Col(dbc.Card([
@@ -85,7 +91,7 @@ def get_layout():
                     html.H6("Inv. Productos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H3(id="kpi-product-investment", className="card-title fw-bold")
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
 
             # KPI Inversión Insumos
             dbc.Col(dbc.Card([
@@ -93,7 +99,7 @@ def get_layout():
                     html.H6("Inv. Insumos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H3(id="kpi-material-investment", className="card-title fw-bold")
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
 
             # Alertas Productos
             dbc.Col(dbc.Card([
@@ -101,7 +107,7 @@ def get_layout():
                     html.H6("Alertas Productos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.Div(id="low-stock-alerts-products", style={"maxHeight": "60px", "overflowY": "auto", "fontSize": "0.85rem"})
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
 
             # Alertas Insumos
             dbc.Col(dbc.Card([
@@ -109,27 +115,30 @@ def get_layout():
                     html.H6("Alertas Insumos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.Div(id="low-stock-alerts-materials", style={"maxHeight": "60px", "overflowY": "auto", "fontSize": "0.85rem"})
                 ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), width=3),
+            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3),
         ], className="mb-4 g-3", align="stretch"),
 
-        # --- FILAS DE GRÁFICOS ---
+        # --- FILAS DE GRÁFICOS (RESPONSIVO) ---
+        # Antes: width=8 y width=4. 
+        # Ahora: xs=12 (celular ocupa todo el ancho), lg=8 (PC mantiene proporción)
         dbc.Row([
-            dbc.Col(dbc.Card(dcc.Graph(id="monthly-summary-chart"), className="shadow-sm border-0 p-2"), width=8),
-            dbc.Col(dbc.Card(dcc.Graph(id="waterfall-profit-summary"), className="shadow-sm border-0 p-2"), width=4),
+            dbc.Col(dbc.Card(dcc.Graph(id="monthly-summary-chart"), className="shadow-sm border-0 p-2"), xs=12, lg=8, className="mb-3 mb-lg-0"),
+            dbc.Col(dbc.Card(dcc.Graph(id="waterfall-profit-summary"), className="shadow-sm border-0 p-2"), xs=12, lg=4),
         ], className="mb-4 g-3"),
         
         dbc.Row([
+            # xs=12 (celular apilado), md=6 (tablet/PC mitad y mitad)
             dbc.Col(
                 dbc.Card(
                     html.Div(dcc.Graph(id="chart-sales-by-product"), style={'overflowX': 'auto'}),
                     className="shadow-sm border-0 p-2"
-                ), width=6
+                ), xs=12, md=6, className="mb-3 mb-md-0"
             ),
             dbc.Col(
                 dbc.Card(
                     html.Div(dcc.Graph(id="revenue-by-category-chart"), style={'overflowX': 'auto'}),
                     className="shadow-sm border-0 p-2"
-                ), width=6
+                ), xs=12, md=6
             ),
         ], className="mb-4 g-3"),
 
@@ -137,7 +146,6 @@ def get_layout():
             dbc.Col(dbc.Card(dcc.Graph(id="sales-over-time-chart"), className="shadow-sm border-0 p-2"), width=12)
         ], className="mb-4")
     ])
-
 def register_callbacks(app):
     @app.callback(
         Output('kpi-total-revenue', 'children'), 
@@ -249,22 +257,69 @@ def register_callbacks(app):
             font=dict(family="Poppins, sans-serif")
         )
 
-        # --- WATERFALL ---
+# --- WATERFALL (SOLO MONTOS) ---
         waterfall_x = ["Inicio", "Ingresos", "Costo Ventas", "Gastos Op.", "Ganancia Neta"]
         waterfall_measures = ["absolute", "relative", "relative", "relative", "total"]
+        
         waterfall_y = [0, total_revenue, -total_cogs, -total_expenses, net_profit]
-        waterfall_text = ["", f"${total_revenue:,.2f}", f"${total_cogs:,.2f}", f"${total_expenses:,.2f}", f"${net_profit:,.2f}"]
+        
+        saldo_tras_costos = total_revenue - total_cogs 
+        saldo_tras_gastos = saldo_tras_costos - total_expenses 
+
+        # TEXTO: Ahora solo mostramos el dinero, sin títulos adicionales
+        waterfall_text = [
+            "", 
+            f"${total_revenue:,.2f}",       # Antes decía "Ingresos<br>..."
+            f"${saldo_tras_costos:,.2f}",    
+            f"${saldo_tras_gastos:,.2f}",    
+            f"${net_profit:,.2f}"           # Antes decía "Ganancia Neta<br>..."
+        ]
+        
         water_color = "#32a852" if net_profit >= 0 else "#dc3545"
+
+        # DATOS PARA HOVER [Inicio, Fin, Total_de_la_barra]
+        custom_tooltip_data = [
+            [0, 0, 0],                                         
+            [0, total_revenue, total_revenue],                 
+            [total_revenue, saldo_tras_costos, total_cogs],    
+            [saldo_tras_costos, saldo_tras_gastos, total_expenses], 
+            [0, net_profit, net_profit]                        
+        ]
+
+        # PLANTILLAS DE HOVER (Mantenemos tu configuración deseada)
+        hover_simple = "<b>%{x}</b><br>%{customdata[2]:$,.2f}<extra></extra>"
+        
+        hover_detailed = (
+            "<b>%{x}</b><br>" +
+            "Total: %{customdata[2]:$,.2f}<br>" +
+            "Inicio: %{customdata[0]:$,.2f}<br>" +
+            "Fin: %{customdata[1]:$,.2f}" +
+            "<extra></extra>"
+        )
+
+        hover_templates_list = [
+            hover_simple,    # Inicio
+            hover_simple,    # Ingresos (Solo Total)
+            hover_detailed,  # Costo Ventas (Detallado)
+            hover_detailed,  # Gastos Op. (Detallado)
+            hover_simple     # Ganancia Neta (Solo Total)
+        ]
 
         fig_waterfall = go.Figure(go.Waterfall(
             name = "P&L", orientation = "v", measure = waterfall_measures, x = waterfall_x,
-            textposition = "outside", text = waterfall_text, y = waterfall_y,
+            textposition = "outside", 
+            text = waterfall_text,      # Usamos la lista limpia solo con montos
+            y = waterfall_y,            
             textfont_color = ['rgba(0,0,0,0)', 'black', 'black', 'black', 'black'],
             connector = {"line":{"color":"rgb(63, 63, 63)"}},
             increasing = {"marker": {"color": "#2c3e50"}},
             decreasing = {"marker": {"color": "#e74c3c"}},
-            totals     = {"marker": {"color": water_color}}
+            totals     = {"marker": {"color": water_color}},
+            
+            customdata = custom_tooltip_data,
+            hovertemplate = hover_templates_list
         ))
+
         fig_waterfall.update_layout(
                 title="Resumen P&L", waterfallgap = 0.3, height=400,
                 margin=dict(l=0, r=0, t=50, b=20),
