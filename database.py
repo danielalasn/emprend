@@ -927,4 +927,3 @@ def delete_materials_bulk(material_ids, user_id):
         connection.execute(query, {"material_ids": material_ids_int, "user_id": int(user_id)})
         connection.commit()
     return True, f"{len(material_ids_int)} insumos marcados como inactivos."
-

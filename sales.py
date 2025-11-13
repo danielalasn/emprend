@@ -15,7 +15,7 @@ from app import app
 from database import (
     load_sales, get_product_options, load_products, load_categories,
     update_stock, update_sale, delete_sale, attempt_stock_deduction,
-    delete_sales_bulk # <-- Importación añadida
+    delete_sales_bulk
 )
 
 def get_layout():
@@ -55,8 +55,7 @@ def get_layout():
                  html.Div(id="sale-validation-alert"),
                  dbc.Row([
                      dbc.Col([html.Label("Selecciona un Producto"), dcc.Dropdown(id='product-dropdown', placeholder="Selecciona un producto...")], width=6),
-                     # SIN PLACEHOLDER: 'value=1' se usa por defecto
-                     dbc.Col([html.Label("Cantidad Vendida"), dbc.Input(id='quantity-input', type='number', min=1, step=1, value=1)], width=6),
+                     dbc.Col([html.Label("Cantidad Vendida"), dbc.Input(id='quantity-input', type='number', min=1, step=1, placeholder=0)], width=6),
                  ], className="mb-3"),
                  dbc.Button("Registrar Venta", id="submit-sale-button", color="primary", n_clicks=0, className="mt-3")
              ])
@@ -64,7 +63,7 @@ def get_layout():
 
          dbc.Accordion([ # Import Sales Accordion
              dbc.AccordionItem(
-                 children=[ # <-- Corregido para envolver en lista
+                 children=[ 
                      dcc.Upload(
                          id='upload-sales-data',
                          children=html.Div(['Arrastra y suelta o ', html.A('Selecciona un Archivo')]),
@@ -94,17 +93,14 @@ def get_layout():
          ], start_collapsed=True, className="m-4"),
 
          dbc.Accordion([ # Sales History Accordion
-             # EN sales.py, DENTRO DE get_layout()
-            dbc.AccordionItem(
-                children=[ 
-                    dbc.Button("Descargar Excel", id="btn-download-sales-excel", color="success", className="mb-3 me-2"),
-                    dbc.Button("Borrar Seleccionados", id="delete-selected-sales-btn", color="danger", n_clicks=0, className="mb-3"),
-                    html.Div(id='bulk-delete-sales-output'),
-
-                    # --- INICIO DE LA CORRECCIÓN ---
-                    # Definimos la tabla aquí, en el layout, con data vacía
-                    dash_table.DataTable(
-                        id='history-table', # <-- El ID ahora existe en el layout
+             dbc.AccordionItem(
+                 children=[ 
+                     dbc.Button("Descargar Excel", id="btn-download-sales-excel", color="success", className="mb-3 me-2"),
+                     dbc.Button("Borrar Seleccionados", id="delete-selected-sales-btn", color="danger", n_clicks=0, className="mb-3"),
+                     html.Div(id='bulk-delete-sales-output'), 
+                     
+                     dash_table.DataTable(
+                        id='history-table',
                         columns=[
                             {"name": "ID Venta", "id": "sale_id"},
                             {"name": "Producto", "id": "product_name"},
@@ -115,11 +111,12 @@ def get_layout():
                             {"name": "Editar", "id": "editar"},
                             {"name": "Eliminar", "id": "eliminar"}
                         ],
-                        data=[], # <-- Se inicializa vacía
+                        data=[], 
                         page_size=10,
                         sort_action='native',
                         row_selectable='multi',
                         selected_rows=[],
+                        style_table={'overflowX': 'auto'},
                         selected_row_ids=[],
                         sort_by=[{'column_id': 'sale_date_display', 'direction': 'desc'}],
                         style_cell_conditional=[
@@ -127,9 +124,8 @@ def get_layout():
                             {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
                         ]
                     )
-                    # --- FIN DE LA CORRECCIÓN ---
-                ], 
-                title="Ver Historial de Ventas"
+                 ], 
+                 title="Ver Historial de Ventas"
              )
          ], start_collapsed=True, className="m-4")
      ])
@@ -137,10 +133,10 @@ def get_layout():
 
 def register_callbacks(app):
 
-    # --- CALLBACK: Registrar Venta (con deducción atómica) ---
+    # --- CALLBACK: Registrar Venta ---
     @app.callback(
         Output('sale-validation-alert', 'children'),
-        Output('store-data-signal', 'data', allow_duplicate=True), # <-- CORREGIDO: allow_duplicate añadido
+        Output('store-data-signal', 'data', allow_duplicate=True), 
         Input('submit-sale-button', 'n_clicks'),
         [State('product-dropdown', 'value'), State('quantity-input', 'value'),
          State('store-data-signal', 'data')],
@@ -150,7 +146,7 @@ def register_callbacks(app):
         if not current_user.is_authenticated or not all([prod_id, qty]):
             raise PreventUpdate
 
-        user_id = int(current_user.id) # Fix numpy.int64
+        user_id = int(current_user.id) 
         try:
             qty = int(qty)
             if qty <= 0:
@@ -158,11 +154,9 @@ def register_callbacks(app):
         except (ValueError, TypeError):
              return dbc.Alert("Error: Cantidad no válida.", color="danger", dismissable=True), dash.no_update
 
-        # Intentar deducir stock atómicamente
         success = attempt_stock_deduction(prod_id, qty, user_id)
 
         if not success:
-            # Si falló, obtener stock actual para mensaje
             products_df = load_products(user_id)
             try:
                 current_stock = products_df.loc[products_df['product_id'] == prod_id, 'stock'].iloc[0]
@@ -170,19 +164,18 @@ def register_callbacks(app):
             except IndexError:
                  return dbc.Alert(f"Error: Producto no encontrado.", color="danger", dismissable=True), dash.no_update
 
-        # Si la deducción tuvo éxito, registrar la venta
         try:
-            products_df = load_products(user_id) # Cargar datos del producto
+            products_df = load_products(user_id) 
             info = products_df.loc[products_df['product_id'] == prod_id].iloc[0]
 
             from database import engine
-            sale_time = datetime.now() # Usar objeto datetime
+            sale_time = datetime.now() 
             pd.DataFrame([{
                 'product_id': prod_id,
                 'quantity': qty,
                 'total_amount': info['price'] * qty,
                 'cogs_total': info['cost'] * qty,
-                'sale_date': sale_time, # Guardar como datetime
+                'sale_date': sale_time, 
                 'user_id': user_id
             }]).to_sql('sales', engine, if_exists='append', index=False)
 
@@ -190,10 +183,8 @@ def register_callbacks(app):
             return dbc.Alert("¡Venta registrada!", color="success", dismissable=True, duration=4000), new_signal
 
         except Exception as e:
-            # Error después de deducir stock (raro)
             print(f"Error al registrar venta después de deducir stock: {e}")
             try:
-                 # Intentar restaurar stock
                  products_df = load_products(user_id)
                  info = products_df.loc[products_df['product_id'] == prod_id].iloc[0]
                  update_stock(prod_id, info['stock'] + qty, user_id)
@@ -203,11 +194,11 @@ def register_callbacks(app):
 
     # --- CALLBACK: Refrescar Tabla y Dropdowns ---
     @app.callback(
-        Output('history-table', 'data'),
+        Output('history-table', 'data'), # <-- Solo actualizamos DATA
         Output('product-dropdown', 'options'),
         Output('edit-sale-product', 'options'),
-        [Input('main-tabs', 'active_tab'), # Trigger 1
-         Input('store-data-signal', 'data')] # Trigger 2
+        [Input('main-tabs', 'active_tab'), 
+         Input('store-data-signal', 'data')] 
     )
     def refresh_sales_components(active_tab, signal_data):
         if not current_user.is_authenticated:
@@ -218,7 +209,7 @@ def register_callbacks(app):
         if active_tab != 'tab-sales':
              raise PreventUpdate
 
-        user_id = int(current_user.id) # Fix numpy.int64
+        user_id = int(current_user.id) 
         sales_df = load_sales(user_id)
         products_df = load_products(user_id)
         categories_df = load_categories(user_id)
@@ -235,11 +226,9 @@ def register_callbacks(app):
             df_show['sale_date_display'] = df_show['sale_date'].dt.strftime('%Y-%m-%d %H:%M')
             df_show['editar'] = "✏️"
             df_show['eliminar'] = "🗑️"
-            df_show['id'] = df_show['sale_id'] # <-- AÑADIDO PARA BORRADO MASIVO
+            df_show['id'] = df_show['sale_id'] 
 
         product_options = get_product_options(user_id)
-
-        # Simplemente devolvemos los datos para la tabla, no el componente
         return df_show.to_dict('records'), product_options, product_options
 
     # --- CALLBACK: Descargar Excel ---
@@ -252,7 +241,7 @@ def register_callbacks(app):
         if n_clicks is None: raise PreventUpdate
         if not current_user.is_authenticated: raise PreventUpdate
 
-        user_id = int(current_user.id) # Fix numpy.int64
+        user_id = int(current_user.id) 
         sales_df = load_sales(user_id)
         products_df = load_products(user_id)
         categories_df = load_categories(user_id)
@@ -277,7 +266,7 @@ def register_callbacks(app):
     def upload_sales_data(contents, filename, signal_data, update_stock_enabled):
         if not current_user.is_authenticated or contents is None: raise PreventUpdate
 
-        user_id = int(current_user.id) # Fix numpy.int64
+        user_id = int(current_user.id) 
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
 
@@ -377,7 +366,7 @@ def register_callbacks(app):
         return dbc.Alert("No se encontraron registros válidos para importar.", color="warning"), dash.no_update
 
 
-    # --- CALLBACK: Abrir Modales Editar/Eliminar ---
+    # --- CALLBACK: Abrir Modales Editar/Eliminar (CORREGIDO) ---
     @app.callback(
         Output('sale-edit-modal', 'is_open'),
         Output('sale-delete-confirm-modal', 'is_open'),
@@ -387,20 +376,23 @@ def register_callbacks(app):
         Output('edit-sale-quantity', 'value'),
         Output('edit-sale-date', 'date'),
         Input('history-table', 'active_cell'),
+        # Usar DATA para poder leer el ID, pero con active_cell
         State('history-table', 'derived_virtual_data'),
         prevent_initial_call=True
     )
     def open_sale_modals(active_cell, data):
-        if not current_user.is_authenticated or not active_cell or 'row' not in active_cell:
+        if not current_user.is_authenticated or not active_cell:
             raise PreventUpdate
 
-        user_id = int(current_user.id) # Fix numpy.int64
-        row_idx = active_cell['row']
+        # --- CORRECCIÓN CLAVE: Usar 'row_id' ---
+        if 'row_id' not in active_cell:
+            raise PreventUpdate
+            
+        sale_id = active_cell['row_id']
         column_id = active_cell['column_id']
+        # -------------------------------------
 
-        if not data or row_idx >= len(data): raise PreventUpdate
-        sale_id = data[row_idx]['sale_id']
-
+        user_id = int(current_user.id) 
         sales_df = load_sales(user_id) 
         try:
             sale_info = sales_df[sales_df['sale_id'] == sale_id].iloc[0]
@@ -434,7 +426,7 @@ def register_callbacks(app):
     def save_edited_sale(n, sale_id, new_product_id, new_quantity, sale_date_str, signal):
         if not n or not sale_id: raise PreventUpdate
 
-        user_id = int(current_user.id) # Fix numpy.int64
+        user_id = int(current_user.id) 
 
         if not all([new_product_id, new_quantity, sale_date_str]):
              return True, dash.no_update, dbc.Alert("Todos los campos son obligatorios.", color="danger")
@@ -513,7 +505,7 @@ def register_callbacks(app):
     def confirm_delete_sale(n, sale_id, signal):
         if not n or not sale_id: raise PreventUpdate
 
-        user_id = int(current_user.id) # Fix numpy.int64
+        user_id = int(current_user.id) 
         product_id_to_restore = None
         quantity_to_restore = 0
 

@@ -187,10 +187,23 @@ def register_callbacks(app):
         
         total_product_investment = (products_with_cat_names['cost'] * products_with_cat_names['stock']).sum() if not products_with_cat_names.empty else 0
         
-        low_stock_products = products_df[
-            (products_df['stock'] <= products_df['alert_threshold']) & 
-            (products_df['alert_threshold'] > 0)
-        ]
+        if 'is_active' in products_df.columns:
+             # Convertir a booleanos reales por si vienen como 1/0 o True/False
+             products_df['is_active'] = products_df['is_active'].astype(bool)
+             
+             low_stock_products = products_df[
+                (products_df['stock'] <= products_df['alert_threshold']) & 
+                (products_df['alert_threshold'] > 0) &
+                (products_df['is_active'] == True) # <--- FILTRO AÑADIDO
+            ]
+        else:
+             # Fallback por si la columna no existe (aunque update_tables ya la creó)
+             low_stock_products = products_df[
+                (products_df['stock'] <= products_df['alert_threshold']) & 
+                (products_df['alert_threshold'] > 0)
+            ]
+
+
         if low_stock_products.empty:
             product_alerts = html.Div([html.I(className="fas fa-check-circle text-success me-2"), "Todo en orden"], className="text-success small")
         else:

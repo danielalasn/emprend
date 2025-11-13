@@ -61,10 +61,10 @@ def get_layout():
                 dbc.Label("Descripción", className="mt-2"),
                 dbc.Textarea(id='edit-product-desc'),
                 dbc.Row([
-                    dbc.Col([dbc.Label("Costo Base (Sin Insumos)"), dbc.Input(id='edit-product-cost', type='number', min=0, step=0.01, value=0)]),
-                    dbc.Col([dbc.Label("Precio Venta"), dbc.Input(id='edit-product-price', type='number', min=0, step=0.01, value=0)]),
-                    dbc.Col([dbc.Label("Stock Actual"), dbc.Input(id='edit-product-stock', type='number', min=0, step=1, value=0)]),
-                    dbc.Col([dbc.Label("Alerta Stock Bajo"), dbc.Input(id='edit-product-alert', type='number', min=0, step=1, value=0)]),
+                    dbc.Col([dbc.Label("Costo Base (Sin Insumos)"), dbc.Input(id='edit-product-cost', type='number', min=0, step=0.01, placeholder=0)]),
+                    dbc.Col([dbc.Label("Precio Venta"), dbc.Input(id='edit-product-price', type='number', min=0, step=0.01, placeholder=0)]),
+                    dbc.Col([dbc.Label("Stock Actual"), dbc.Input(id='edit-product-stock', type='number', min=0, step=1, placeholder=0)]),
+                    dbc.Col([dbc.Label("Alerta Stock Bajo"), dbc.Input(id='edit-product-alert', type='number', min=0, step=1, placeholder=0)]),
                 ], className="mt-2"),
                 html.Hr(),
                 html.H5("Insumos Utilizados", className="mt-3 mb-3"),
@@ -150,6 +150,7 @@ def get_layout():
                         row_selectable='multi',
                         selected_rows=[],
                         selected_row_ids=[],
+                        style_table={'overflowX': 'auto'},
                         # Estilos
                         style_cell={'textAlign': 'left'}, 
                         style_cell_conditional=[{'if': {'column_id': c}, 'cursor': 'pointer', 'textAlign': 'center'} for c in ['editar', 'eliminar']]
@@ -169,10 +170,10 @@ def get_layout():
                         ], className="mb-3"),
                         dbc.Row([dbc.Col(html.Div([html.Label("Descripción (Opcional)"), dbc.Textarea(id="product-desc-input")]), width=12)], className="mb-3"),
                         dbc.Row([
-                            dbc.Col(html.Div([html.Label("Costo Base"), dbc.Input(id="product-cost-input", type="number", min=0, step=0.01, value=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Precio Venta"), dbc.Input(id="product-price-input", type="number", min=0, step=0.01, value=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Stock Inicial"), dbc.Input(id="product-stock-input", type="number", min=0, step=1, value=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Alerta Stock"), dbc.Input(id="product-alert-input", type="number", min=0, step=1, value=0 )]), width=3),
+                            dbc.Col(html.Div([html.Label("Costo Base"), dbc.Input(id="product-cost-input", type="number", min=0, step=0.01, placeholder=0)]), width=3),
+                            dbc.Col(html.Div([html.Label("Precio Venta"), dbc.Input(id="product-price-input", type="number", min=0, step=0.01, placeholder=0)]), width=3),
+                            dbc.Col(html.Div([html.Label("Stock Inicial"), dbc.Input(id="product-stock-input", type="number", min=0, step=1, placeholder=0)]), width=3),
+                            dbc.Col(html.Div([html.Label("Alerta Stock"), dbc.Input(id="product-alert-input", type="number", min=0, step=1, placeholder=0 )]), width=3),
                         ], className="mb-3"),
                         html.Hr(), html.H4("Insumos Utilizados", className="mt-4 mb-3"),
                         dbc.Row([
@@ -195,7 +196,7 @@ def get_layout():
                         html.H3("Añadir Stock Producto Existente"), html.Div(id="add-stock-alert"),
                         dbc.Row([
                             dbc.Col([html.Label("Producto"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona...")], width=6),
-                            dbc.Col([html.Label("Cantidad a Añadir"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1, value=0)], width=6),
+                            dbc.Col([html.Label("Cantidad a Añadir"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1, placeholder=0)], width=6),
                         ], className="mb-3"),
                         dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3")
                     ])
@@ -230,9 +231,10 @@ def get_layout():
 def register_callbacks(app):
 
     # Callback Añadir Producto
+# Callback Añadir Producto (CORREGIDO FINAL)
     @app.callback(
         Output('add-product-alert', 'children'),
-        Output('store-data-signal', 'data', allow_duplicate=True), # <-- CORRECCIÓN: allow_duplicate AÑADIDO
+        Output('store-data-signal', 'data', allow_duplicate=True),
         Input('save-product-button', 'n_clicks'),
         [State('product-name-input', 'value'), State('product-desc-input', 'value'),
          State('product-category-dropdown', 'value'), State('product-price-input', 'value'),
@@ -256,6 +258,7 @@ def register_callbacks(app):
         
         if not all([name, cat_id, price is not None]):
             return dbc.Alert("Nombre, Categoría y Precio son obligatorios.", color="danger"), dash.no_update
+        
         try:
             price_f = float(price); cost_f = float(cost) if cost is not None else 0
             stock_i = int(stock) if stock is not None else 0; alert_i = int(alert) if alert is not None else 0
@@ -263,7 +266,7 @@ def register_callbacks(app):
         except (ValueError, TypeError):
              return dbc.Alert("Precio, Costo Base, Stock y Alerta deben ser números válidos (Precio > 0).", color="danger"), dash.no_update
 
-        # --- RECOGER CANTIDADES Y VALIDAR ---
+        # --- RECOGER CANTIDADES ---
         material_data_to_save = {}
         error_messages = []
         options_map = {opt['value']: opt['label'] for opt in all_material_options}
@@ -289,28 +292,41 @@ def register_callbacks(app):
              error_list_items = [html.Li(msg) for msg in error_messages]
              alert_content = html.Div([html.P("Corrige los errores en las cantidades de insumos:"), html.Ul(error_list_items)])
              return dbc.Alert(alert_content, color="danger"), dash.no_update
-        # --- FIN RECOGER CANTIDADES ---
-
-        # --- CÁLCULO DE COSTO TOTAL ---
+        
+        # --- CÁLCULO DE COSTO ---
         total_material_cost = 0.0
         if material_data_to_save:
             material_costs_map = get_material_costs_map(user_id, material_data_to_save.keys())
             for mat_id, qty in material_data_to_save.items():
                 total_material_cost += material_costs_map.get(mat_id, 0.0) * qty
         total_product_cost = cost_f + total_material_cost
-        # --- FIN CÁLCULO ---
 
-        product_data = {'name': name, 'description': desc or "", 'category_id': cat_id,
-                    'price': price_f, 
-                    'cost': total_product_cost,
-                    'stock': stock_i,
-                    'alert_threshold': alert_i, 'user_id': user_id, 'is_active': True}
+        product_data = {
+            'name': name.strip(),
+            'description': desc or "", 
+            'category_id': cat_id,
+            'price': price_f, 
+            'cost': total_product_cost,
+            'stock': stock_i,
+            'alert_threshold': alert_i, 
+            'user_id': user_id, 
+            'is_active': True
+        }
 
-        new_product_id = None
         try:
             with engine.connect() as connection:
-                with connection.begin(): # Usar transacción
+                # AQUI ESTÁ EL CAMBIO: Usamos connection.begin() para TODO el bloque
+                with connection.begin(): 
                     
+                    # 1. Validación de duplicados (DENTRO de la transacción)
+                    check_query = text("SELECT product_id FROM products WHERE user_id = :user_id AND lower(name) = lower(:name) AND is_active = TRUE")
+                    existing_prod = connection.execute(check_query, {"user_id": user_id, "name": name.strip()}).fetchone()
+                    
+                    if existing_prod:
+                        # Si retornamos aquí, el context manager hace rollback/cierre automático limpio
+                        return dbc.Alert(f"Error: Ya existe un producto activo con el nombre '{name}'.", color="danger"), dash.no_update
+
+                    # 2. Inserción del producto
                     insert_prod_query = text("""
                         INSERT INTO products (name, description, category_id, price, cost, stock, alert_threshold, user_id, is_active)
                         VALUES (:name, :description, :category_id, :price, :cost, :stock, :alert_threshold, :user_id, :is_active)
@@ -322,23 +338,24 @@ def register_callbacks(app):
                     if new_product_id is None:
                         raise Exception("No se pudo obtener el ID del nuevo producto.")
 
+                    # 3. Guardar materiales vinculados
                     if material_data_to_save:
                         success_save_mats, msg_save_mats = save_product_materials(connection, new_product_id, material_data_to_save, user_id)
                         if not success_save_mats:
                             raise Exception(f"Error al guardar insumos: {msg_save_mats}")
 
+                    # 4. Descontar Stock de insumos (si aplica)
                     if stock_i > 0:
                         success_deduct, msg_deduct = deduct_materials_for_production(connection, new_product_id, stock_i, user_id)
                         if not success_deduct:
                             raise Exception(msg_deduct)
-                # Commit automático
+                
         except Exception as e:
             print(f"Error al guardar producto o insumos: {e}")
             return dbc.Alert(f"Error al guardar: {e}", color="danger"), dash.no_update
 
         new_signal = (signal_data or 0) + 1
         return dbc.Alert(f"¡Producto '{name}' guardado exitosamente!", color="success", dismissable=True, duration=4000), new_signal
-
     # Callback Añadir Stock
     @app.callback(
         Output('add-stock-alert', 'children'),

@@ -16,7 +16,7 @@ from database import (
     load_expenses, load_expense_categories, get_expense_category_options,
     update_expense, delete_expense, delete_expense_category,
     reactivate_expense_category, update_expense_category,
-    delete_expenses_bulk # <-- Importación añadida
+    delete_expenses_bulk
 )
 
 def get_layout():
@@ -118,16 +118,14 @@ def get_layout():
 
                 dbc.Accordion([
                     dbc.AccordionItem(
-                        children=[ # <-- Contenido envuelto en lista
+                        children=[
                             dbc.Button("Descargar Excel", id="btn-download-expenses-excel", color="success", className="mb-3 me-2"),
                             
-                            # --- INICIO DE MODIFICACIÓN: BORRADO MASIVO ---
                             dbc.Button("Borrar Seleccionados", id="delete-selected-expenses-btn", color="danger", n_clicks=0, className="mb-3"),
-                            html.Div(id='bulk-delete-expenses-output'), # Para mostrar alertas
+                            html.Div(id='bulk-delete-expenses-output'), 
 
-                            # La DataTable ahora se define aquí
                             dash_table.DataTable(
-                                id='expenses-table', # <-- ID movido aquí
+                                id='expenses-table',
                                 columns=[
                                     {"name": "ID Gasto", "id": "expense_id"},
                                     {"name": "Fecha", "id": "expense_date_display"},
@@ -136,21 +134,19 @@ def get_layout():
                                     {"name": "Editar", "id": "editar"},
                                     {"name": "Eliminar", "id": "eliminar"}
                                 ],
-                                data=[], # Se inicializa vacía
+                                data=[], 
                                 page_size=10,
                                 sort_action='native',
                                 sort_by=[{'column_id': 'expense_date_display', 'direction': 'desc'}],
-                                # Propiedades de selección
                                 row_selectable='multi',
                                 selected_rows=[],
+                                style_table={'overflowX': 'auto'},
                                 selected_row_ids=[],
-                                # Estilos
                                 style_cell_conditional=[
                                     {'if': {'column_id': 'editar'}, 'cursor': 'pointer'},
                                     {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
                                 ]
                             )
-                            # --- FIN DE MODIFICACIÓN ---
                         ],
                         title="Ver Historial de Gastos"
                     )
@@ -226,7 +222,7 @@ def register_callbacks(app):
         new_signal = (signal_data or 0) + 1
         return dbc.Alert(f"Gasto de '{expense_cat_name}' por ${amount_f:,.2f} guardado.", color="success", dismissable=True, duration=4000), new_signal
 
-    # Callback añadir categoría (con reactivación)
+    # Callback añadir categoría
     @app.callback(
         Output('add-expense-category-alert', 'children'),
         Output('store-data-signal', 'data', allow_duplicate=True),
@@ -264,7 +260,7 @@ def register_callbacks(app):
 
     # Callback refrescar tablas
     @app.callback(
-        Output('expenses-table', 'data'), # <-- MODIFICADO
+        Output('expenses-table', 'data'), 
         Output('expense-categories-table-container', 'children'),
         Output('expense-category-dropdown', 'options'),
         [Input('main-tabs', 'active_tab'),
@@ -284,7 +280,6 @@ def register_callbacks(app):
         expenses_df = load_expenses(user_id)
         exp_cat_df = load_expense_categories(user_id)
 
-        # Generar datos para la tabla de gastos
         display_df = pd.DataFrame()
         if not expenses_df.empty:
             if not exp_cat_df.empty:
@@ -296,9 +291,8 @@ def register_callbacks(app):
             display_df['expense_date_display'] = display_df['expense_date'].dt.strftime('%Y-%m-%d %H:%M')
             display_df['editar'] = "✏️"
             display_df['eliminar'] = "🗑️"
-            display_df['id'] = display_df['expense_id'] # <-- AÑADIDO PARA BORRADO MASIVO
+            display_df['id'] = display_df['expense_id'] 
 
-        # Generar tabla de categorías (solo activas)
         exp_cat_active_df = pd.DataFrame()
         if not exp_cat_df.empty and 'is_active' in exp_cat_df.columns:
             exp_cat_active_df = exp_cat_df[exp_cat_df['is_active'] == True].copy()
@@ -323,7 +317,6 @@ def register_callbacks(app):
             ]
         )
         
-        # --- MODIFICADO: Devuelve solo 'data' para la tabla de gastos ---
         return display_df.to_dict('records'), expense_categories_table, get_expense_category_options(user_id)
 
     # Callback descargar excel
@@ -432,21 +425,26 @@ def register_callbacks(app):
         Output('edit-expense-date', 'date'),
         Output('edit-expense-category', 'options'),
         Input('expenses-table', 'active_cell'),
-        State('expenses-table', 'derived_virtual_data'),
+        # --- CORRECCIÓN: USAR data PARA LEER EL ID, PERO USAR row_id ---
+        State('expenses-table', 'derived_virtual_data'), 
         prevent_initial_call=True
     )
     def open_expense_modals(active_cell, data):
-        if not current_user.is_authenticated or not active_cell or 'row' not in active_cell:
+        if not current_user.is_authenticated or not active_cell:
             raise PreventUpdate
 
-        user_id = int(current_user.id)
-        row_idx = active_cell['row']
+        # --- CORRECCIÓN CLAVE: Usar 'row_id' para identificar la fila única ---
+        # Esto funciona independientemente del orden o paginación
+        if 'row_id' not in active_cell:
+            raise PreventUpdate
+            
+        expense_id = active_cell['row_id']
         column_id = active_cell['column_id']
+        # -------------------------------------------------------------------
 
-        if not data or row_idx >= len(data): raise PreventUpdate
-        expense_id = data[row_idx]['expense_id']
-
+        user_id = int(current_user.id)
         expenses_df = load_expenses(user_id)
+        
         try:
              expense_info = expenses_df[expenses_df['expense_id'] == expense_id].iloc[0]
         except IndexError:
@@ -565,7 +563,7 @@ def register_callbacks(app):
     )
     def confirm_delete_expense_category(n, category_id, signal):
         if not n or not category_id: raise PreventUpdate
-        delete_expense_category(category_id, current_user.id)
+        delete_expense_category(category_id, current_user.id) 
         return False, (signal or 0) + 1
 
     # Callback cerrar modal eliminar Categoría

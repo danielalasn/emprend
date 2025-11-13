@@ -57,7 +57,7 @@ def get_main_app_layout():
         dcc.Download(id="download-expenses-excel"),
         dcc.Download(id="download-summary-excel"), 
 
-        # --- NAVBAR MODERNO ---
+        # --- NAVBAR MODERNO CON DEGRADE ---
         dbc.Navbar(
             dbc.Container([
                 # Marca / Logo
@@ -76,10 +76,15 @@ def get_main_app_layout():
                     dbc.NavItem(dbc.Button("Salir", href="/logout", color="light", size="sm", outline=True, className="mt-1")),
                 ], className="ms-auto", navbar=True),
             ], fluid=True),
-            color="#32a852", # Tu color de marca
+            
+            # AQUI ESTA EL CAMBIO:
+            # Quitamos 'color="#32a852"' y usamos 'style' para el gradiente
             dark=True,
             className="mb-4 shadow-sm",
-            style={"height": "70px"}
+            style={
+                "background": "linear-gradient(135deg, #32a852 0%, #2c3e50 100%)", # <-- Degradado aplicado
+                "height": "70px"
+            }
         ),
 
         # --- CONTENIDO PRINCIPAL ---
@@ -94,6 +99,7 @@ def get_main_app_layout():
             html.Div(id="tab-content", className="p-0") # Padding controlado por las vistas internas
         ], fluid=True, className="px-4") # Un poco de padding lateral en la pantalla
     ], style={"backgroundColor": "#f4f6f8", "minHeight": "100vh"})
+
 app.layout = html.Div([
     dcc.Location(id='url', refresh=True),
     html.Div(id='page-content')
@@ -171,7 +177,7 @@ def display_subscription_warning(pathname):
                     return dbc.Alert(f"⚠️ Tu suscripción vence {expire_str} ({sub_end_date_obj.strftime('%Y-%m-%d')}).", color="warning", dismissable=True) 
     return None
 
-# --- NUEVO CALLBACK: Deshabilitar DatePicker si Switch está ON ---
+# --- Callback: Deshabilitar DatePicker si Switch está ON ---
 @app.callback(
     Output('summary-date-picker', 'disabled'),
     Input('summary-see-all-switch', 'value')
@@ -194,7 +200,7 @@ def download_full_summary(n_clicks, start_date, end_date, see_all):
     
     user_id = int(current_user.id)
     
-    # Lógica del Switch: Si está ON, pasamos None para traer todo
+    # Lógica del Switch
     if see_all:
         final_start = None
         final_end = None
