@@ -376,7 +376,7 @@ def register_callbacks(app):
                 )
             )
 
-        # --- GRÁFICO MENSUAL (CORRECCIÓN OVERLAP) ---
+# --- GRÁFICO MENSUAL (CORREGIDO) ---
         if not sales_df.empty:
              sales_monthly = sales_df.resample('ME', on='sale_date').agg(Ingresos=('total_amount', 'sum'), COGS=('cogs_total', 'sum')).reset_index()
              sales_monthly['month'] = sales_monthly['sale_date'].dt.to_period('M')
@@ -400,7 +400,9 @@ def register_callbacks(app):
             summary_df['P&L'] = summary_df['Ingresos'] - summary_df['COGS'] - summary_df['Gastos']
             summary_df['month'] = summary_df['month'].astype(str)
             plot_df = pd.melt(summary_df, id_vars=['month'], value_vars=['COGS', 'Gastos', 'P&L'], var_name='Tipo', value_name='Monto')
-            plot_df['Tipo'] = plot_df['Tipo'].replace({'COGS': 'Costo de Venta'})
+            
+            # CAMBIO 1: Renombrar 'Costo de Venta' a 'Costos'
+            plot_df['Tipo'] = plot_df['Tipo'].replace({'COGS': 'Costos'})
             
             def assign_pnl_category(row):
                 if row['Tipo'] == 'P&L':
@@ -408,19 +410,35 @@ def register_callbacks(app):
                 return row['Tipo']
             plot_df['Tipo_Color'] = plot_df.apply(assign_pnl_category, axis=1)
             
-            color_map = {'Costo de Venta': "#f39c12", 'Gastos': "#e74c3c", 'P&L Positivo': "#32a852", 'P&L Negativo': "#c0392b"}
+            # CAMBIO 2: Actualizar mapa de colores con la nueva llave 'Costos'
+            color_map = {'Costos': "#f39c12", 'Gastos': "#e74c3c", 'P&L Positivo': "#32a852", 'P&L Negativo': "#c0392b"}
             
             fig_monthly = px.bar(plot_df, x='month', y='Monto', color='Tipo_Color', title="Resumen Financiero Mensual",
-                                 labels={'month': 'Mes', 'Tipo_Color': 'Tipo'}, color_discrete_map=color_map, height=400)
+                                 # Quitamos el label 'Tipo_Color' de aquí
+                                 labels={'month': 'Mes', 'Monto': 'Monto'}, 
+                                 color_discrete_map=color_map, height=400)
+            
+            # Limpieza de nombres en leyenda (quita ' Positivo'/' Negativo')
             fig_monthly.for_each_trace(lambda t: t.update(name=t.name.replace(' Positivo', '').replace(' Negativo', '')))
             
-            # Ajustes de margen para evitar overlap en el eje X y leyenda
             monthly_layout = layout_style.copy()
-            monthly_layout['margin'] = dict(l=40, r=20, t=60, b=100) # <-- Margen inferior (b) aumentado a 100
-            monthly_layout['legend'] = dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5) # <-- Leyenda más abajo (y=-0.3)
+            # Ajustamos márgenes: reducimos 'b' (bottom) un poco ya que ganaremos espacio quitando el título
+            monthly_layout['margin'] = dict(l=20, r=20, t=60, b=80)
+            
+            monthly_layout['legend'] = dict(
+                orientation="h", 
+                yanchor="top", 
+                y=-0.25, # Posición optimizada: Debajo de las fechas pero más cerca
+                xanchor="center", 
+                x=0.5,
+                title=None, # Sin título de leyenda
+                itemwidth=30 # Fuerza a que los items estén más compactos (ayuda en móvil)
+            )
             
             fig_monthly.update_layout(**monthly_layout, barmode='relative')
-            fig_monthly.update_xaxes(type='category', tickangle=-45) # Rotar etiquetas del eje X
+            
+            # CAMBIO CLAVE: title=None elimina la palabra "Mes" y evita el overlap
+            fig_monthly.update_xaxes(type='category', tickangle=-45, title=None)
 
         return (
             f"${total_revenue:,.2f}", 
