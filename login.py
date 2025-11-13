@@ -14,10 +14,16 @@ from database import update_user_password, record_first_login
 # --- TUS FRASES SELECCIONADAS ---
 SLOGANS = [
     "Administra menos, crece más.",
-    "Tus números claros, tu mente en el negocio.",
     "Donde los pequeños negocios se hacen grandes.",
-    "Números claros, mente clara."
+    "Números claros, mente clara.",
+    "El único fracaso real es no intentarlo.",
+    "Si puedes soñarlo, puedes lograrlo.",
+    "La acción vence a la procrastinación.",
+    "Convierte tu pasión en tu proyecto.",
+    "Sé tan bueno que no puedan ignorarte.",
+    "Empieza donde estás, usa lo que tienes."
 ]
+
 
 # --- ESTILOS PERSONALIZADOS ---
 BACKGROUND_STYLE = {

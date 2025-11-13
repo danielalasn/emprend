@@ -1,20 +1,53 @@
 # database.py
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, QueuePool
 from datetime import datetime, timedelta, date 
 import os
+from dotenv import load_dotenv  # <--- AGREGAR ESTO
 
-# --- CONFIGURACIÓN DE LA BASE DE DATOS ---
+# 1. CARGA AUTOMÁTICA DEL ARCHIVO .ENV
+# override=True fuerza a recargar el archivo por si la terminal tiene basura vieja
+load_dotenv(override=True)
+
+# 2. LEER URL
 DATABASE_URL = os.environ.get('DATABASE_URL')
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+
+# Validación de seguridad
+if not DATABASE_URL or "PEGAR_AQUI" in DATABASE_URL:
+    raise ValueError("ERROR: No se pudo leer la DATABASE_URL del archivo .env")
+
+# 3. CORRECCIONES AUTOMÁTICAS
+# Quitar espacios
+DATABASE_URL = DATABASE_URL.strip()
+
+# Corregir protocolo para SQLAlchemy
+if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Asegurarse que DATABASE_URL esté definida antes de crear el engine
-if not DATABASE_URL:
-    raise ValueError("La variable de entorno DATABASE_URL no está configurada.")
+# Forzar SSL para Render
+if "sslmode" not in DATABASE_URL:
+    separator = "&" if "?" in DATABASE_URL else "?"
+    DATABASE_URL += f"{separator}sslmode=require"
 
-engine = create_engine(DATABASE_URL)
+# --- MOTOR BLINDADO (KEEPALIVE) ---
+connect_args = {
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 5,
+    "connect_timeout": 10 
+}
 
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    poolclass=QueuePool,
+    pool_size=2,          
+    max_overflow=3,
+    pool_timeout=30,      
+    pool_recycle=60,      
+    pool_pre_ping=True    
+)
 # --- FUNCIONES DE CARGA ---
 def load_products(user_id):
     """Carga todos los productos (activos e inactivos) para un usuario."""
@@ -927,3 +960,194 @@ def delete_materials_bulk(material_ids, user_id):
         connection.execute(query, {"material_ids": material_ids_int, "user_id": int(user_id)})
         connection.commit()
     return True, f"{len(material_ids_int)} insumos marcados como inactivos."
+
+# ... (Imports y configuración existente en database.py) ...
+
+# --- NUEVAS FUNCIONES PARA CONCEPTOS DE GASTO ---
+
+def load_expense_concepts(user_id):
+    """Carga conceptos activos con el nombre de su categoría."""
+    query = text("""
+        SELECT c.concept_id, c.name as concept_name, cat.name as category_name, c.expense_category_id 
+        FROM expense_concepts c
+        JOIN expense_categories cat ON c.expense_category_id = cat.expense_category_id
+        WHERE c.user_id = :user_id AND c.is_active = TRUE AND cat.is_active = TRUE
+        ORDER BY cat.name, c.name
+    """)
+    return pd.read_sql(query, engine, params={"user_id": int(user_id)})
+
+def get_expense_concept_options(user_id):
+    """Opciones para el dropdown de Añadir Gasto (Agrupado visualmente)."""
+    df = load_expense_concepts(user_id)
+    if df.empty: return []
+    return [{'label': f"{row['category_name']} - {row['concept_name']}", 'value': row['concept_id']} for _, row in df.iterrows()]
+
+def add_expense_concept(name, category_id, user_id):
+    """Agrega un concepto validando duplicados (case insensitive + trim)."""
+    clean_name = " ".join(name.strip().split()) # Quita espacios extra intermedios y laterales
+    user_id = int(user_id)
+    category_id = int(category_id)
+    
+    with engine.connect() as connection:
+        with connection.begin():
+            # Validación estricta: Busca nombre igual ignorando mayúsculas en la misma categoría
+            check_sql = text("""
+                SELECT concept_id, is_active FROM expense_concepts 
+                WHERE user_id = :uid 
+                AND expense_category_id = :cid
+                AND LOWER(name) = LOWER(:name)
+            """)
+            existing = connection.execute(check_sql, {"uid": user_id, "cid": category_id, "name": clean_name}).fetchone()
+            
+            if existing:
+                if existing.is_active:
+                    return False, f"El concepto '{clean_name}' ya existe en esta categoría."
+                else:
+                    # Reactivar si estaba borrado
+                    connection.execute(text("UPDATE expense_concepts SET is_active = TRUE, name = :name WHERE concept_id = :id"), {"name": clean_name, "id": existing.concept_id})
+                    return True, f"Concepto '{clean_name}' reactivado exitosamente."
+            
+            # Crear nuevo
+            connection.execute(text("""
+                INSERT INTO expense_concepts (name, expense_category_id, user_id, is_active)
+                VALUES (:name, :cid, :uid, TRUE)
+            """), {"name": clean_name, "cid": category_id, "uid": user_id})
+            
+            return True, f"Concepto '{clean_name}' creado exitosamente."
+
+def delete_expense_concept(concept_id, user_id):
+    with engine.connect() as connection:
+        connection.execute(text("UPDATE expense_concepts SET is_active = FALSE WHERE concept_id = :id AND user_id = :uid"), {"id": int(concept_id), "uid": int(user_id)})
+        connection.commit()
+
+# --- ACTUALIZAR FUNCIONES EXISTENTES ---
+
+# Modificar add_expense_category para usar la misma validación estricta
+def add_expense_category_strict(name, user_id):
+    clean_name = " ".join(name.strip().split())
+    user_id = int(user_id)
+    
+    with engine.connect() as connection:
+        with connection.begin():
+            check_sql = text("SELECT expense_category_id, is_active FROM expense_categories WHERE user_id = :uid AND LOWER(name) = LOWER(:name)")
+            existing = connection.execute(check_sql, {"uid": user_id, "name": clean_name}).fetchone()
+            
+            if existing:
+                if existing.is_active: return False, f"La categoría '{clean_name}' ya existe."
+                else:
+                    connection.execute(text("UPDATE expense_categories SET is_active = TRUE, name = :name WHERE expense_category_id = :id"), {"name": clean_name, "id": existing.expense_category_id})
+                    return True, f"Categoría '{clean_name}' reactivada."
+            
+            connection.execute(text("INSERT INTO expense_categories (name, user_id, is_active) VALUES (:name, :uid, TRUE)"), {"name": clean_name, "uid": user_id})
+            return True, f"Categoría '{clean_name}' creada."
+
+# Modificar load_expenses para traer el nombre del concepto
+def load_expenses_detailed(user_id, start_date=None, end_date=None):
+    params = {"user_id": int(user_id)}
+    sql = """
+        SELECT e.expense_id, e.amount, e.expense_date, 
+               COALESCE(con.name, 'Gasto Antiguo') as concepto, 
+               COALESCE(cat.name, 'Sin Categoría') as categoria,
+               e.expense_concept_id
+        FROM expenses e
+        LEFT JOIN expense_concepts con ON e.expense_concept_id = con.concept_id
+        LEFT JOIN expense_categories cat ON con.expense_category_id = cat.expense_category_id
+        OR e.expense_category_id = cat.expense_category_id -- Fallback para gastos viejos
+        WHERE e.user_id = :user_id
+    """
+    if start_date and end_date:
+        sql += " AND e.expense_date >= :start_date AND e.expense_date < :end_date_plus_one"
+        params["start_date"] = start_date
+        try:
+            params["end_date_plus_one"] = pd.to_datetime(end_date).normalize() + timedelta(days=1)
+        except: pass
+    
+    sql += " ORDER BY e.expense_date DESC"
+    return pd.read_sql(text(sql), engine, params=params, parse_dates=['expense_date'])
+
+# --- AGREGAR AL FINAL DE database.py ---
+
+def update_expense_concept(concept_id, new_name, new_category_id, user_id):
+    """Actualiza nombre y categoría de un concepto, validando duplicados."""
+    clean_name = " ".join(new_name.strip().split())
+    user_id = int(user_id)
+    concept_id = int(concept_id)
+    new_category_id = int(new_category_id)
+
+    with engine.connect() as connection:
+        with connection.begin():
+            # Verificar duplicados (mismo nombre en misma categoría, pero diferente ID)
+            check_sql = text("""
+                SELECT concept_id FROM expense_concepts 
+                WHERE user_id = :uid 
+                AND expense_category_id = :cid
+                AND LOWER(name) = LOWER(:name)
+                AND concept_id != :id
+                AND is_active = TRUE
+            """)
+            existing = connection.execute(check_sql, {
+                "uid": user_id, "cid": new_category_id, 
+                "name": clean_name, "id": concept_id
+            }).fetchone()
+            
+            if existing:
+                raise ValueError(f"El concepto '{clean_name}' ya existe en esa categoría.")
+
+            connection.execute(text("""
+                UPDATE expense_concepts 
+                SET name = :name, expense_category_id = :cid
+                WHERE concept_id = :id AND user_id = :uid
+            """), {"name": clean_name, "cid": new_category_id, "id": concept_id, "uid": user_id})
+
+def update_expense_category_strict(category_id, new_name, user_id):
+    """Actualiza nombre de categoría validando duplicados."""
+    clean_name = " ".join(new_name.strip().split())
+    user_id = int(user_id)
+    category_id = int(category_id)
+
+    with engine.connect() as connection:
+        with connection.begin():
+            check_sql = text("""
+                SELECT expense_category_id FROM expense_categories 
+                WHERE user_id = :uid 
+                AND LOWER(name) = LOWER(:name)
+                AND expense_category_id != :id
+                AND is_active = TRUE
+            """)
+            existing = connection.execute(check_sql, {"uid": user_id, "name": clean_name, "id": category_id}).fetchone()
+            
+            if existing:
+                raise ValueError(f"La categoría '{clean_name}' ya existe.")
+
+            connection.execute(text("""
+                UPDATE expense_categories SET name = :name 
+                WHERE expense_category_id = :id AND user_id = :uid
+            """), {"name": clean_name, "id": category_id, "uid": user_id})
+
+# --- AGREGAR AL FINAL DE database.py ---
+
+def add_product_category_strict(name, user_id):
+    """Agrega una categoría de producto con validación estricta (trim + case insensitive)."""
+    clean_name = " ".join(name.strip().split()) # Limpieza de espacios
+    user_id = int(user_id)
+    
+    with engine.connect() as connection:
+        with connection.begin():
+            # Verificar si existe (activo o inactivo)
+            check_sql = text("""
+                SELECT category_id, is_active FROM categories 
+                WHERE user_id = :uid AND LOWER(name) = LOWER(:name)
+            """)
+            existing = connection.execute(check_sql, {"uid": user_id, "name": clean_name}).fetchone()
+            
+            if existing:
+                if existing.is_active:
+                    return False, f"La categoría '{clean_name}' ya existe."
+                else:
+                    # Reactivar
+                    connection.execute(text("UPDATE categories SET is_active = TRUE, name = :name WHERE category_id = :id"), {"name": clean_name, "id": existing.category_id})
+                    return True, f"Categoría '{clean_name}' reactivada exitosamente."
+            
+            # Crear nueva
+            connection.execute(text("INSERT INTO categories (name, user_id, is_active) VALUES (:name, :uid, TRUE)"), {"name": clean_name, "uid": user_id})
+            return True, f"Categoría '{clean_name}' creada exitosamente."

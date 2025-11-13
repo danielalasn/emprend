@@ -10,90 +10,131 @@ import io
 import dash
 from flask_login import current_user
 from datetime import datetime
+from sqlalchemy import text
 
 from app import app
 from database import (
-    load_expenses, load_expense_categories, get_expense_category_options,
-    update_expense, delete_expense, delete_expense_category,
-    reactivate_expense_category, update_expense_category,
-    delete_expenses_bulk
+    load_expenses_detailed, load_expense_categories, get_expense_category_options,
+    add_expense_category_strict, add_expense_concept, get_expense_concept_options,
+    load_expense_concepts, delete_expense_concept, delete_expense, delete_expense_category,
+    delete_expenses_bulk, engine,
+    update_expense_concept, update_expense_category_strict
 )
 
 def get_layout():
     return html.Div([
-        dcc.Store(id='store-expense-id-to-edit'),
+        # --- STORES ---
         dcc.Store(id='store-expense-id-to-delete'),
-        dcc.Store(id='store-expense-category-id-to-delete'),
-        dcc.Store(id='store-expense-category-id-to-edit'),
+        dcc.Store(id='store-expense-id-to-edit'),
+        dcc.Store(id='store-concept-id-to-delete'),
+        dcc.Store(id='store-concept-id-to-edit'),
+        dcc.Store(id='store-exp-cat-id-to-delete'),
+        dcc.Store(id='store-exp-cat-id-to-edit'),
 
-        # --- MODALES (Sin cambios de diseño) ---
-        dbc.Modal([ # Edit Expense Modal
-            dbc.ModalHeader("Editar Gasto"),
+        # --- 1. MODAL EDITAR GASTO (SIMPLIFICADO) ---
+        dbc.Modal([
+            dbc.ModalHeader("Editar Gasto Registrado"),
             dbc.ModalBody(dbc.Form([
+                html.Div(id="alert-edit-expense"),
+                
+                # CAMBIO: Eliminado el filtro de categoría. Solo Concepto "Categoría - Nombre"
                 dbc.Row([
-                    dbc.Col([dbc.Label("Tipo de Gasto"), dcc.Dropdown(id='edit-expense-category', options=[])], xs=12, className="mb-2"),
-                    dbc.Col([dbc.Label("Monto"), dbc.Input(id='edit-expense-amount', type='number')], xs=12, className="mb-2"),
+                    dbc.Col([
+                        dbc.Label("Concepto", className="fw-bold small"),
+                        dcc.Dropdown(id='dropdown-edit-concept', placeholder="Selecciona concepto...", options=[])
+                    ], xs=12, className="mb-3"),
                 ]),
-                dbc.Label("Fecha del Gasto", className="mt-2"),
-                html.Div(dcc.DatePickerSingle(id='edit-expense-date', className="w-100"))
+
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Label("Monto", className="fw-bold small"),
+                        dbc.Input(id='input-edit-amount', type='number', min=0, step="any")
+                    ], xs=12, className="mb-3"),
+                ]),
+                
+                dbc.Label("Fecha del Gasto", className="fw-bold small"),
+                html.Div(dcc.DatePickerSingle(id='date-edit-expense', className="w-100"))
             ])),
             dbc.ModalFooter([
-                dbc.Button("Cancelar", id="cancel-edit-expense-button", color="secondary", className="ms-auto"),
-                dbc.Button("Guardar Cambios", id="save-edited-expense-button", color="primary"),
+                dbc.Button("Cancelar", id="cancel-edit-exp", className="ms-auto"),
+                dbc.Button("Guardar Cambios", id="save-edit-exp", color="primary")
             ]),
-        ], id="expense-edit-modal", is_open=False),
+        ], id="modal-edit-exp", is_open=False),
 
-        dbc.Modal([ # Edit Expense Category Modal
-            dbc.ModalHeader("Editar Tipo de Gasto"),
+        # --- 2. MODAL EDITAR CONCEPTO ---
+        dbc.Modal([
+            dbc.ModalHeader("Editar Concepto"),
             dbc.ModalBody(dbc.Form([
-                dbc.Label("Nombre del Tipo de Gasto"),
-                dbc.Input(id='edit-expense-category-name', type='text')
+                html.Div(id="alert-edit-concept"),
+                dbc.Label("Categoría Padre", className="fw-bold small"),
+                dcc.Dropdown(id='dropdown-edit-con-cat', placeholder="Cambiar categoría...", options=[]),
+                html.Div(className="mb-3"),
+                dbc.Label("Nombre del Concepto", className="fw-bold small"),
+                dbc.Input(id='input-edit-con-name', type='text')
             ])),
             dbc.ModalFooter([
-                dbc.Button("Cancelar", id="cancel-edit-expense_category-button", color="secondary", className="ms-auto"),
-                dbc.Button("Guardar Cambios", id="save-edited-expense_category-button", color="primary"),
+                dbc.Button("Cancelar", id="cancel-edit-con", className="ms-auto"),
+                dbc.Button("Guardar Cambios", id="save-edit-con", color="primary")
             ]),
-        ], id="expense_category-edit-modal", is_open=False),
+        ], id="modal-edit-con", is_open=False),
 
-        dbc.Modal([ # Delete Expense Modal
+        # --- 3. MODAL EDITAR CATEGORÍA ---
+        dbc.Modal([
+            dbc.ModalHeader("Editar Categoría"),
+            dbc.ModalBody(dbc.Form([
+                html.Div(id="alert-edit-cat"),
+                dbc.Label("Nombre de la Categoría", className="fw-bold small"),
+                dbc.Input(id='input-edit-cat-name', type='text')
+            ])),
+            dbc.ModalFooter([
+                dbc.Button("Cancelar", id="cancel-edit-cat", className="ms-auto"),
+                dbc.Button("Guardar Cambios", id="save-edit-cat", color="primary")
+            ]),
+        ], id="modal-edit-cat", is_open=False),
+
+        # --- MODALES CONFIRMACIÓN ---
+        dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación"),
-            dbc.ModalBody("¿Estás seguro de que quieres eliminar este gasto?"),
-            dbc.ModalFooter([
-                dbc.Button("Cancelar", id="cancel-delete-expense-button", color="secondary", className="ms-auto"),
-                dbc.Button("Eliminar", id="confirm-delete-expense-button", color="danger"),
-            ]),
-        ], id="expense-delete-confirm-modal", is_open=False),
+            dbc.ModalBody("¿Eliminar este gasto registrado?"),
+            dbc.ModalFooter([dbc.Button("Cancelar", id="cancel-del-exp", className="ms-auto"), dbc.Button("Eliminar", id="confirm-del-exp", color="danger")])
+        ], id="modal-del-exp", is_open=False),
 
-        dbc.Modal([ # Delete Expense Category Modal
-            dbc.ModalHeader("Confirmar Eliminación de Categoría"),
-            dbc.ModalBody("¿Estás seguro de que quieres eliminar este tipo de gasto? Se ocultará de las listas y se desasignará de todos los gastos asociados."),
-            dbc.ModalFooter([
-                dbc.Button("Cancelar", id="cancel-delete-expense_category-button", color="secondary", className="ms-auto"),
-                dbc.Button("Eliminar", id="confirm-delete-expense_category-button", color="danger"),
-            ]),
-        ], id="expense_category-delete-confirm-modal", is_open=False),
+        dbc.Modal([
+            dbc.ModalHeader("Confirmar Eliminación Concepto"),
+            dbc.ModalBody("¿Eliminar este concepto? (No borrará gastos históricos)."),
+            dbc.ModalFooter([dbc.Button("Cancelar", id="cancel-del-con", className="ms-auto"), dbc.Button("Eliminar", id="confirm-del-con", color="danger")])
+        ], id="modal-del-con", is_open=False),
 
-        # --- PESTAÑAS PRINCIPALES ---
-        dbc.Tabs(id="expense-sub-tabs", active_tab="sub-tab-add-expense", children=[
+        dbc.Modal([
+            dbc.ModalHeader("Confirmar Eliminación Categoría"),
+            dbc.ModalBody("¿Eliminar esta categoría? Se borrarán sus conceptos asociados."),
+            dbc.ModalFooter([dbc.Button("Cancelar", id="cancel-del-cat", className="ms-auto"), dbc.Button("Eliminar", id="confirm-del-cat", color="danger")])
+        ], id="modal-del-exp-cat", is_open=False), 
+
+        # --- PESTAÑAS ---
+        dbc.Tabs(id="expense-tabs", active_tab="tab-add-expense", children=[
             
-            # --- TAB 1: AÑADIR GASTO ---
-            dbc.Tab(label="Añadir Gasto", tab_id="sub-tab-add-expense", children=[
-                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ # Márgenes responsivos
+            # TAB 1: AÑADIR GASTO
+            dbc.Tab(label="Registrar Gasto", tab_id="tab-add-expense", children=[
+                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
                     dbc.CardBody([
-                        html.H3("Registrar un Gasto Operativo", className="card-title mb-4"),
-                        html.Div(id="add-expense-alert"),
-                        
-                        # Fila Responsiva: Inputs se apilan en celular
+                        html.H3("Registrar Gasto", className="card-title mb-4"),
+                        html.Div(id="alert-add-expense"),
                         dbc.Row([
-                            dbc.Col([html.Label("Tipo de Gasto", className="fw-bold small"), dcc.Dropdown(id='expense-category-dropdown', placeholder="Selecciona un tipo de gasto...")], xs=12, md=6, className="mb-3 mb-md-0"),
-                            dbc.Col([html.Label("Monto", className="fw-bold small"), dbc.Input(id='expense-amount-input', type='number', min=0, placeholder="0.00")], xs=12, md=6),
+                            dbc.Col([
+                                html.Label("Concepto del Gasto", className="fw-bold small"),
+                                dcc.Dropdown(id='dropdown-expense-concepts', placeholder="Busca el concepto...", options=[])
+                            ], xs=12, md=6, className="mb-3 mb-md-0"),
+                            dbc.Col([
+                                html.Label("Monto", className="fw-bold small"),
+                                dbc.Input(id='input-expense-amount', type='number', min=0, placeholder="0.00")
+                            ], xs=12, md=6),
                         ], className="mb-3"),
-                        
-                        dbc.Button("Guardar Gasto", id="save-expense-button", color="danger", className="mt-3 w-100 w-md-auto")
+                        dbc.Button("Guardar Gasto", id="btn-save-expense", color="success", className="w-100 w-md-auto")
                     ])
                 ]),
 
-                # Acordeón Importar Excel
+                # ACORDEÓN IMPORTAR EXCEL
                 dbc.Accordion([
                     dbc.AccordionItem(
                         children=[
@@ -111,538 +152,413 @@ def get_layout():
                                 html.H5("Formato Requerido:", className="alert-heading"),
                                 html.P("El archivo Excel debe tener las siguientes columnas:"),
                                 html.Ul([
-                                    html.Li([html.B("nombre"), " (El 'Tipo de Gasto' ya debe existir)"]),
+                                    html.Li([html.B("categoria"), " (Ej: 'Transporte')"]),
+                                    html.Li([html.B("concepto"), " (Ej: 'Uber')"]),
                                     html.Li([html.B("monto"), " (Valor numérico)"]),
                                     html.Li([html.B("fecha"), " (Formato AAAA-MM-DD)"]),
                                 ]),
-                            ], color="info", className="mt-2"),
+                            ], color="info", className="mt-2 small"),
                             html.Div(id='upload-expenses-output')
                         ],
                         title="Importar Historial de Gastos desde Excel"
                     )
-                ], start_collapsed=True, className="m-2 m-md-4"),
+                ], start_collapsed=True, className="m-2 m-md-4")
+            ]),
 
-                # Acordeón Ver Historial
-                dbc.Accordion([
-                    dbc.AccordionItem(
-                        children=[
-                            dbc.Button("Descargar Excel", id="btn-download-expenses-excel", color="success", className="mb-3 me-2"),
-                            dbc.Button("Borrar Seleccionados", id="delete-selected-expenses-btn", color="danger", n_clicks=0, className="mb-3"),
-                            html.Div(id='bulk-delete-expenses-output'), 
+            # TAB 2: HISTORIAL
+            dbc.Tab(label="Historial", tab_id="tab-history", children=[
+                html.Div(className="p-2 p-md-4", children=[
+                    dbc.Row([
+                        dbc.Col(html.H4("Historial de Gastos"), width="auto"),
+                        dbc.Col(dbc.Button("Borrar Seleccionados", id="btn-bulk-del-exp", color="danger", size="sm"), width="auto", className="ms-auto")
+                    ], className="mb-3 align-items-center"),
+                    
+                    html.Div(id="output-bulk-del-exp"),
+                    
+                    dash_table.DataTable(
+                        id='table-expenses-history',
+                        columns=[
+                            {"name": "Fecha", "id": "fecha_fmt"},
+                            {"name": "Categoría", "id": "categoria"},
+                            {"name": "Concepto", "id": "concepto"},
+                            {"name": "Monto", "id": "amount", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
+                            {"name": "Editar", "id": "editar"},
+                            {"name": "Eliminar", "id": "eliminar"}
+                        ],
+                        data=[], page_size=15, row_selectable='multi', selected_rows=[],
+                        sort_action='native', filter_action='native',
+                        style_table={'overflowX': 'auto'},
+                        style_cell={'textAlign': 'left', 'minWidth': '100px'},
+                        style_cell_conditional=[
+                            {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'},
+                            {'if': {'column_id': 'editar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'}
+                        ]
+                    )
+                ])
+            ]),
 
+            # TAB 3: CREAR CONCEPTO
+            dbc.Tab(label="Crear Concepto", tab_id="tab-create-concept", children=[
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
+                            dbc.CardBody([
+                                html.H4("Nuevo Concepto", className="mb-3"),
+                                html.Div(id="alert-add-concept"),
+                                html.Label("Categoría Padre", className="small fw-bold"),
+                                dcc.Dropdown(id='dropdown-parent-category', placeholder="Selecciona categoría...", className="mb-3"),
+                                html.Label("Nombre del Concepto", className="small fw-bold"),
+                                dbc.Input(id='input-concept-name', placeholder="Ej: Pauta Instagram", className="mb-3"),
+                                dbc.Button("Crear Concepto", id="btn-save-concept", color="primary", className="w-100")
+                            ])
+                        ])
+                    ], xs=12, md=4, className="mb-4 mb-md-0"),
+                    dbc.Col([
+                        html.Div(className="p-2 p-md-4", children=[
+                            html.H4("Conceptos Existentes"),
                             dash_table.DataTable(
-                                id='expenses-table',
+                                id='table-concepts',
                                 columns=[
-                                    {"name": "ID Gasto", "id": "expense_id"},
-                                    {"name": "Fecha", "id": "expense_date_display"},
-                                    {"name": "Gasto", "id": "gasto"},
-                                    {"name": "Monto", "id": "amount", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
+                                    {"name": "Categoría", "id": "category_name"},
+                                    {"name": "Concepto", "id": "concept_name"},
                                     {"name": "Editar", "id": "editar"},
                                     {"name": "Eliminar", "id": "eliminar"}
                                 ],
-                                data=[], 
-                                page_size=10,
-                                sort_action='native',
-                                sort_by=[{'column_id': 'expense_date_display', 'direction': 'desc'}],
-                                row_selectable='multi',
-                                selected_rows=[],
-                                selected_row_ids=[],
-                                style_table={'overflowX': 'auto'}, # Scroll horizontal vital
+                                data=[], page_size=10, style_table={'overflowX': 'auto'},
+                                style_cell={'textAlign': 'left'},
                                 style_cell_conditional=[
-                                    {'if': {'column_id': 'editar'}, 'cursor': 'pointer'},
-                                    {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
+                                    {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'},
+                                    {'if': {'column_id': 'editar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'}
                                 ]
                             )
-                        ],
-                        title="Ver Historial de Gastos"
-                    )
-                ], start_collapsed=True, className="m-2 m-md-4")
+                        ])
+                    ], xs=12, md=8)
+                ])
             ]),
-            
-            # --- TAB 2: GESTIONAR GASTOS (AQUÍ ESTABA EL ERROR GRAVE) ---
-            dbc.Tab(label="Gestionar Gastos", tab_id="sub-tab-manage-expenses", children=[
+
+            # TAB 4: CREAR CATEGORÍA
+            dbc.Tab(label="Crear Categoría", tab_id="tab-create-category", children=[
                 dbc.Row([
-                    
-                    # COLUMNA IZQUIERDA: Crear Categoría
-                    # Agregamos 'className="mb-4 mb-md-0"' para dar espacio abajo solo en celular
                     dbc.Col([
-                        # CAMBIO: Quitamos 'h-100' para que la tarjeta NO se estire
-                        dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ 
+                        dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
                             dbc.CardBody([
-                                html.H3("Crear Nuevo Tipo", className="card-title h4 mb-3"),
-                                html.Div(id="add-expense-category-alert"),
-                                dbc.Input(id="expense-category-name-input", placeholder="Nombre del nuevo gasto", className="mb-3"),
-                                dbc.Button("Guardar Gasto", id="save-expense-category-button", color="primary", className="w-100")
+                                html.H4("Nueva Categoría", className="mb-3"),
+                                html.Div(id="alert-add-category"),
+                                html.Label("Nombre Categoría", className="small fw-bold"),
+                                dbc.Input(id='input-category-name', placeholder="Ej: Marketing", className="mb-3"),
+                                dbc.Button("Crear Categoría", id="btn-save-category", color="primary", className="w-100")
                             ])
                         ])
-                    ], xs=12, md=4, className="mb-4 mb-md-0"), # <--- Margen inferior añadido aquí
-                    
-                    # COLUMNA DERECHA: Tabla de Categorías
+                    ], xs=12, md=4, className="mb-4 mb-md-0"),
                     dbc.Col([
                         html.Div(className="p-2 p-md-4", children=[
-                            html.H3("Tipos de Gastos Existentes", className="mb-3"),
-                            html.Div(id='expense-categories-table-container', style={'overflowX': 'auto'}) # Scroll horizontal
+                            html.H4("Categorías Existentes"),
+                            dash_table.DataTable(
+                                id='table-categories',
+                                columns=[{"name": "ID", "id": "expense_category_id"}, {"name": "Nombre", "id": "name"}, {"name": "Editar", "id": "editar"}, {"name": "Eliminar", "id": "eliminar"}],
+                                data=[], page_size=10, style_table={'overflowX': 'auto'},
+                                style_cell={'textAlign': 'left'},
+                                style_cell_conditional=[
+                                    {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'},
+                                    {'if': {'column_id': 'editar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'}
+                                ]
+                            )
                         ])
                     ], xs=12, md=8)
                 ])
             ])
         ])
     ])
+
 def register_callbacks(app):
+    
+    # --- 1. CARGA DE DATOS ---
     @app.callback(
-        Output('add-expense-alert', 'children'),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Input('save-expense-button', 'n_clicks'),
-        [State('expense-category-dropdown', 'value'),
-         State('expense-amount-input', 'value'),
-         State('store-data-signal', 'data')],
-        prevent_initial_call=True
+        Output('table-expenses-history', 'data'),
+        Output('table-concepts', 'data'),
+        Output('table-categories', 'data'),
+        Output('dropdown-expense-concepts', 'options'),
+        Output('dropdown-parent-category', 'options'),
+        # Ahora 'dropdown-edit-concept' se llena desde aquí con TODOS los conceptos
+        Output('dropdown-edit-concept', 'options'), 
+        Output('dropdown-edit-con-cat', 'options'), 
+        [Input('expense-tabs', 'active_tab'), Input('store-data-signal', 'data')]
     )
-    def add_expense(n, cat_id, amount, signal_data):
-        if n is None or n < 1:
-            raise PreventUpdate
+    def refresh_data(tab, signal):
         if not current_user.is_authenticated: raise PreventUpdate
-
-        user_id = int(current_user.id)
+        uid = int(current_user.id)
         
-        if not cat_id or amount is None:
-            return dbc.Alert("Los campos Tipo de Gasto y Monto son obligatorios.", color="danger"), dash.no_update
-        try:
-            amount_f = float(amount) if amount is not None else 0.0
-            if amount_f <= 0:
-                 return dbc.Alert("El monto debe ser positivo.", color="danger"), dash.no_update
-        except (ValueError, TypeError):
-             return dbc.Alert("Monto no válido.", color="danger"), dash.no_update
+        expenses = load_expenses_detailed(uid)
+        expenses['fecha_fmt'] = expenses['expense_date'].dt.strftime('%Y-%m-%d')
+        expenses['eliminar'] = "🗑️"
+        expenses['editar'] = "✏️"
+        expenses['id'] = expenses['expense_id']
 
-        from database import engine
-        current_time = datetime.now() 
+        concepts = load_expense_concepts(uid)
+        concepts['eliminar'] = "🗑️"
+        concepts['editar'] = "✏️"
+        concepts['id'] = concepts['concept_id']
 
-        pd.DataFrame([{
-            'expense_date': current_time, 
-            'expense_category_id': cat_id,
-            'amount': amount_f, 
-            'user_id': user_id
-        }]).to_sql('expenses', engine, if_exists='append', index=False)
+        cats = load_expense_categories(uid)
+        active_cats = cats[cats['is_active']==True].copy() if not cats.empty and 'is_active' in cats.columns else cats
+        active_cats['eliminar'] = "🗑️"
+        active_cats['editar'] = "✏️"
+        active_cats['id'] = active_cats['expense_category_id']
 
-        expense_cat_name = "Gasto"
-        if cat_id:
-            cats_df = pd.DataFrame(get_expense_category_options(user_id))
-            if not cats_df.empty:
-                match = cats_df[cats_df['value'] == cat_id]
-                if not match.empty:
-                    expense_cat_name = match['label'].iloc[0]
+        concept_opts = get_expense_concept_options(uid)
+        cat_opts = get_expense_category_options(uid)
 
-        new_signal = (signal_data or 0) + 1
-        return dbc.Alert(f"Gasto de '{expense_cat_name}' por ${amount_f:,.2f} guardado.", color="success", dismissable=True, duration=4000), new_signal
+        # Enviamos concept_opts a 'dropdown-edit-concept' también
+        return (expenses.to_dict('records'), concepts.to_dict('records'), active_cats.to_dict('records'),
+                concept_opts, cat_opts, concept_opts, cat_opts)
 
-    # Callback añadir categoría
-    @app.callback(
-        Output('add-expense-category-alert', 'children'),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Input('save-expense-category-button', 'n_clicks'),
-        [State('expense-category-name-input', 'value'),
-         State('store-data-signal', 'data')],
-        prevent_initial_call=True
-    )
-    def add_expense_category(n_clicks, name, signal_data):
-        if n_clicks is None: raise PreventUpdate
-        if not current_user.is_authenticated: raise PreventUpdate
-
-        user_id = int(current_user.id)
-        if not name:
-            return dbc.Alert("El nombre no puede estar vacío.", color="warning"), dash.no_update
-
-        from database import engine
-
-        existing_cats = load_expense_categories(user_id) 
-
-        if not existing_cats.empty and 'is_active' in existing_cats.columns:
-            match = existing_cats[existing_cats['name'].str.lower() == name.lower()]
-            if not match.empty:
-                category_data = match.iloc[0]
-                if category_data['is_active']:
-                    return dbc.Alert(f"El tipo de gasto '{name}' ya existe.", color="danger"), dash.no_update
-                else:
-                    reactivate_expense_category(category_data['expense_category_id'], user_id)
-                    new_signal = (signal_data or 0) + 1
-                    return dbc.Alert(f"Tipo de gasto '{category_data['name']}' reactivado.", color="success"), new_signal
-
-        pd.DataFrame([{'name': name.title(), 'user_id': user_id, 'is_active': True}]).to_sql('expense_categories', engine, if_exists='append', index=False)
-        new_signal = (signal_data or 0) + 1
-        return dbc.Alert(f"Tipo de gasto '{name.title()}' guardado.", color="success"), new_signal
-
-    # Callback refrescar tablas
-    @app.callback(
-        Output('expenses-table', 'data'), 
-        Output('expense-categories-table-container', 'children'),
-        Output('expense-category-dropdown', 'options'),
-        [Input('main-tabs', 'active_tab'),
-         Input('expense-sub-tabs', 'active_tab'),
-         Input('store-data-signal', 'data')]
-    )
-    def refresh_expenses_components(main_tab, sub_tab, signal_data):
-        if not current_user.is_authenticated:
-            raise PreventUpdate
-        if main_tab != 'tab-expenses':
-            raise PreventUpdate
-        triggered_id = dash.callback_context.triggered_id
-        if triggered_id != 'store-data-signal' and main_tab != 'tab-expenses':
-             raise PreventUpdate
-
-        user_id = int(current_user.id)
-        expenses_df = load_expenses(user_id)
-        exp_cat_df = load_expense_categories(user_id)
-
-        display_df = pd.DataFrame()
-        if not expenses_df.empty:
-            if not exp_cat_df.empty:
-                display_df = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left').rename(columns={'name': 'gasto'})
-            else:
-                display_df = expenses_df
-
-            display_df['gasto'] = display_df['gasto'].fillna('Categoría Eliminada')
-            display_df['expense_date_display'] = display_df['expense_date'].dt.strftime('%Y-%m-%d %H:%M')
-            display_df['editar'] = "✏️"
-            display_df['eliminar'] = "🗑️"
-            display_df['id'] = display_df['expense_id'] 
-
-        exp_cat_active_df = pd.DataFrame()
-        if not exp_cat_df.empty and 'is_active' in exp_cat_df.columns:
-            exp_cat_active_df = exp_cat_df[exp_cat_df['is_active'] == True].copy()
-        elif not exp_cat_df.empty: 
-             exp_cat_active_df = exp_cat_df.copy()
-
-        exp_cat_active_df['editar'] = "✏️"
-        exp_cat_active_df['eliminar'] = "🗑️"
-
-        expense_categories_table = dash_table.DataTable(
-            id='expense-categories-table',
-            columns=[
-                {"name": "ID", "id": "expense_category_id"},
-                {"name": "Nombre", "id": "name"},
-                {"name": "Editar", "id": "editar"},
-                {"name": "Eliminar", "id": "eliminar"}
-            ],
-            data=exp_cat_active_df.to_dict('records'),
-            style_cell_conditional=[
-                {'if': {'column_id': 'editar'}, 'cursor': 'pointer'},
-                {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
-            ]
-        )
-        
-        return display_df.to_dict('records'), expense_categories_table, get_expense_category_options(user_id)
-
-    # Callback descargar excel
-    @app.callback(
-        Output("download-expenses-excel", "data"),
-        Input("btn-download-expenses-excel", "n_clicks"),
-        prevent_initial_call=True
-    )
-    def download_expenses(n_clicks):
-        if n_clicks is None: raise PreventUpdate
-        if not current_user.is_authenticated: raise PreventUpdate
-        user_id = int(current_user.id)
-        expenses_df = load_expenses(user_id) 
-        exp_cat_df = load_expense_categories(user_id)
-        if not expenses_df.empty and not exp_cat_df.empty:
-            df = pd.merge(expenses_df, exp_cat_df, on='expense_category_id', how='left').rename(columns={'name': 'gasto'})
-        else:
-            df = expenses_df
-        return dcc.send_data_frame(df.to_excel, "historial_gastos.xlsx", sheet_name="Gastos", index=False)
-
-    # Callback importar excel
+    # --- 2. UPLOAD EXCEL (CON CATEGORÍA) ---
     @app.callback(
         Output('upload-expenses-output', 'children'),
         Output('store-data-signal', 'data', allow_duplicate=True),
         Input('upload-expenses-data', 'contents'),
-        [State('upload-expenses-data', 'filename'),
-         State('store-data-signal', 'data')],
+        [State('upload-expenses-data', 'filename'), State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
-    def upload_expenses_data(contents, filename, signal_data):
-        if not current_user.is_authenticated or contents is None: raise PreventUpdate
-
-        user_id = int(current_user.id)
+    def upload_expenses(contents, filename, signal):
+        if not current_user.is_authenticated or not contents: raise PreventUpdate
+        uid = int(current_user.id)
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
-
+        
         try:
-            if 'xls' in filename:
-                df = pd.read_excel(io.BytesIO(decoded))
-            else:
-                return dbc.Alert("El archivo debe ser un .xlsx o .xls", color="danger"), dash.no_update
-        except Exception as e:
-            return dbc.Alert(f"Error al procesar el archivo: {e}", color="danger"), dash.no_update
+            if 'xls' in filename: df = pd.read_excel(io.BytesIO(decoded))
+            else: return dbc.Alert("Formato incorrecto. Usa .xlsx", color="danger"), dash.no_update
+        except Exception as e: return dbc.Alert(f"Error leyendo archivo: {e}", color="danger"), dash.no_update
 
-        required_columns = ['nombre', 'monto', 'fecha']
-        errors = []
-        if not all(col in df.columns for col in required_columns):
-            return dbc.Alert(f"El archivo debe contener las columnas: {', '.join(required_columns)}", color="danger"), dash.no_update
+        df.columns = [c.lower().strip() for c in df.columns]
+        required = ['categoria', 'concepto', 'monto', 'fecha']
+        missing = [col for col in required if col not in df.columns]
+        
+        if missing:
+            return dbc.Alert(f"Faltan columnas: {', '.join(missing)}.", color="danger"), dash.no_update
 
-        expense_cats_db = pd.DataFrame(get_expense_category_options(user_id))
-        expense_cats_lookup = {}
-        if not expense_cats_db.empty:
-             expense_cats_lookup = expense_cats_db.set_index('label')['value'].to_dict()
-
+        existing_concepts = load_expense_concepts(uid)
+        concept_map = {}
+        if not existing_concepts.empty:
+            for _, row in existing_concepts.iterrows():
+                key = (str(row['category_name']).strip().lower(), str(row['concept_name']).strip().lower())
+                concept_map[key] = row['concept_id']
+        
         expenses_to_insert = []
-        for index, row in df.iterrows():
-            category_name = row['nombre']
-            amount = row['monto']
-            expense_date = row['fecha']
+        errors = []
 
-            if category_name not in expense_cats_lookup:
-                errors.append(f"Fila {index + 2}: El tipo de gasto '{category_name}' no existe o está inactivo.")
+        for i, row in df.iterrows():
+            cat_name = str(row['categoria']).strip()
+            con_name = str(row['concepto']).strip()
+            key = (cat_name.lower(), con_name.lower())
+            
+            if key in concept_map:
+                cid = concept_map[key]
+            else:
+                errors.append(f"Fila {i+2}: Concepto '{con_name}' en categoría '{cat_name}' no existe.")
                 continue
+            
             try:
-                amount = float(amount)
-                if amount <= 0:
-                     errors.append(f"Fila {index + 2}: El monto debe ser positivo.")
-                     continue
-            except (ValueError, TypeError):
-                errors.append(f"Fila {index + 2}: El monto '{amount}' no es un número válido.")
+                amt = float(row['monto'])
+                if amt <= 0: raise ValueError
+                dt = pd.to_datetime(row['fecha']).to_pydatetime()
+            except:
+                errors.append(f"Fila {i+2}: Monto o fecha inválidos.")
                 continue
-            try:
-                expense_date_dt = pd.to_datetime(expense_date)
-                expense_date_to_save = expense_date_dt.to_pydatetime()
-            except (ValueError, TypeError):
-                errors.append(f"Fila {index + 2}: La fecha '{expense_date}' no tiene un formato válido.")
-                continue
-
-            expenses_to_insert.append({
-                'expense_category_id': expense_cats_lookup[category_name],
-                'amount': amount,
-                'expense_date': expense_date_to_save, 
-                'user_id': user_id
-            })
+                
+            expenses_to_insert.append({'expense_concept_id': cid, 'amount': amt, 'expense_date': dt, 'user_id': uid})
 
         if errors:
-            return dbc.Alert([html.H5("Se encontraron errores...")] + [html.P(e) for e in errors], color="danger"), dash.no_update
+            return dbc.Alert([html.H5("Errores en la importación:")] + [html.P(e) for e in errors[:10]], color="danger"), dash.no_update
 
         if expenses_to_insert:
-            from database import engine
-            expenses_df_to_insert = pd.DataFrame(expenses_to_insert)
-            expenses_df_to_insert.to_sql('expenses', engine, if_exists='append', index=False)
-            new_signal = (signal_data or 0) + 1
-            return dbc.Alert(f"¡Éxito! Se importaron {len(expenses_to_insert)} registros de gastos.", color="success"), new_signal
-
-        return dbc.Alert("No se encontraron registros válidos.", color="warning"), dash.no_update
-
-    # Callback abrir modales Editar/Eliminar Gasto
-    @app.callback(
-        Output('expense-edit-modal', 'is_open'),
-        Output('expense-delete-confirm-modal', 'is_open'),
-        Output('store-expense-id-to-edit', 'data'),
-        Output('store-expense-id-to-delete', 'data'),
-        Output('edit-expense-category', 'value'),
-        Output('edit-expense-amount', 'value'),
-        Output('edit-expense-date', 'date'),
-        Output('edit-expense-category', 'options'),
-        Input('expenses-table', 'active_cell'),
-        # --- CORRECCIÓN: USAR data PARA LEER EL ID, PERO USAR row_id ---
-        State('expenses-table', 'derived_virtual_data'), 
-        prevent_initial_call=True
-    )
-    def open_expense_modals(active_cell, data):
-        if not current_user.is_authenticated or not active_cell:
-            raise PreventUpdate
-
-        # --- CORRECCIÓN CLAVE: Usar 'row_id' para identificar la fila única ---
-        # Esto funciona independientemente del orden o paginación
-        if 'row_id' not in active_cell:
-            raise PreventUpdate
-            
-        expense_id = active_cell['row_id']
-        column_id = active_cell['column_id']
-        # -------------------------------------------------------------------
-
-        user_id = int(current_user.id)
-        expenses_df = load_expenses(user_id)
+            pd.DataFrame(expenses_to_insert).to_sql('expenses', engine, if_exists='append', index=False)
+            return dbc.Alert(f"¡Éxito! {len(expenses_to_insert)} gastos importados.", color="success"), (signal or 0) + 1
         
+        return dbc.Alert("No se encontraron datos válidos.", color="warning"), dash.no_update
+
+    # --- 3. CRUD (Create) ---
+    @app.callback(
+        Output('alert-add-category', 'children'), Output('input-category-name', 'value'), Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('btn-save-category', 'n_clicks'), State('input-category-name', 'value'), State('store-data-signal', 'data'), prevent_initial_call=True
+    )
+    def save_cat(n, name, signal):
+        if n is None or n == 0: raise PreventUpdate 
+        if not name or not name.strip(): return dbc.Alert("Nombre vacío.", color="warning"), dash.no_update, dash.no_update
         try:
-             expense_info = expenses_df[expenses_df['expense_id'] == expense_id].iloc[0]
-        except IndexError:
-             return False, False, None, None, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+            success, msg = add_expense_category_strict(name, current_user.id)
+            return dbc.Alert(msg, color="success" if success else "danger", dismissable=True), "" if success else dash.no_update, (signal or 0)+1 if success else dash.no_update
+        except Exception as e: return dbc.Alert(f"Error: {e}", color="danger"), dash.no_update, dash.no_update
 
-        category_options = get_expense_category_options(user_id)
-        no_update_list = [dash.no_update] * 4 
-
-        if column_id == "editar":
-            cat_val = int(expense_info['expense_category_id']) if pd.notna(expense_info['expense_category_id']) else None
-            amount_val = expense_info['amount']
-            date_val = expense_info['expense_date'].date() if pd.notna(expense_info['expense_date']) else None
-            return True, False, expense_id, None, cat_val, amount_val, date_val, category_options
-
-        elif column_id == "eliminar":
-            return False, True, None, expense_id, *no_update_list
-
-        return False, False, None, None, *no_update_list
-
-    # Callback guardar edición Gasto
     @app.callback(
-        Output('expense-edit-modal', 'is_open', allow_duplicate=True),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Input('save-edited-expense-button', 'n_clicks'),
-        [State('store-expense-id-to-edit', 'data'),
-         State('edit-expense-category', 'value'),
-         State('edit-expense-amount', 'value'),
-         State('edit-expense-date', 'date'),
-         State('store-data-signal', 'data')],
-        prevent_initial_call=True
+        Output('alert-add-concept', 'children'), Output('input-concept-name', 'value'), Output('dropdown-parent-category', 'value'), Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('btn-save-concept', 'n_clicks'), [State('input-concept-name', 'value'), State('dropdown-parent-category', 'value'), State('store-data-signal', 'data')], prevent_initial_call=True
     )
-    def save_edited_expense(n, expense_id, cat_id, amount, expense_date_str, signal):
-        if not n or not expense_id: raise PreventUpdate
-
-        if not all([cat_id, amount, expense_date_str]):
-             print("Error: Todos los campos son obligatorios al editar gasto.")
-             raise PreventUpdate
+    def save_con(n, name, cat_id, signal):
+        if not n: raise PreventUpdate
+        if not cat_id: return dbc.Alert("Falta Categoría.", color="warning"), dash.no_update, dash.no_update, dash.no_update
+        if not name or not name.strip(): return dbc.Alert("Falta Nombre.", color="warning"), dash.no_update, dash.no_update, dash.no_update
         try:
-             amount = float(amount)
-             if amount <=0: raise ValueError("Amount must be positive")
-             expense_date_dt = datetime.strptime(expense_date_str, '%Y-%m-%d')
-        except (ValueError, TypeError):
-             print("Error: Monto o fecha inválidos al editar gasto.")
-             raise PreventUpdate
+            success, msg = add_expense_concept(name, cat_id, current_user.id)
+            return dbc.Alert(msg, color="success" if success else "danger", dismissable=True), "" if success else dash.no_update, dash.no_update, (signal or 0)+1 if success else dash.no_update
+        except Exception as e: return dbc.Alert(f"Error: {e}", color="danger"), dash.no_update, dash.no_update, dash.no_update
 
-        new_data = {
-            "expense_category_id": cat_id,
-            "amount": amount,
-            "expense_date": expense_date_dt
-        }
-        update_expense(expense_id, new_data, current_user.id)
-        return False, (signal or 0) + 1
-
-    # Callback confirmar eliminar Gasto
     @app.callback(
-        Output('expense-delete-confirm-modal', 'is_open', allow_duplicate=True),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Input('confirm-delete-expense-button', 'n_clicks'),
-        [State('store-expense-id-to-delete', 'data'), State('store-data-signal', 'data')],
-        prevent_initial_call=True
+        Output('alert-add-expense', 'children'), Output('input-expense-amount', 'value'), Output('dropdown-expense-concepts', 'value'), Output('store-data-signal', 'data', allow_duplicate=True),
+        Input('btn-save-expense', 'n_clicks'), [State('dropdown-expense-concepts', 'value'), State('input-expense-amount', 'value'), State('store-data-signal', 'data')], prevent_initial_call=True
     )
-    def confirm_delete_expense(n, expense_id, signal):
-        if not n or not expense_id: raise PreventUpdate
-        delete_expense(expense_id, current_user.id)
-        return False, (signal or 0) + 1
+    def save_exp(n, con_id, amt, signal):
+        if not n: raise PreventUpdate
+        if not con_id: return dbc.Alert("Falta Concepto.", color="warning"), dash.no_update, dash.no_update, dash.no_update
+        try:
+            val = float(amt)
+            if val <= 0: raise ValueError
+        except: return dbc.Alert("Monto inválido.", color="danger"), dash.no_update, dash.no_update, dash.no_update
+        try:
+            pd.DataFrame([{'expense_concept_id': int(con_id), 'amount': val, 'expense_date': datetime.now(), 'user_id': int(current_user.id)}]).to_sql('expenses', engine, if_exists='append', index=False)
+            return dbc.Alert("Gasto registrado.", color="success", duration=3000), "", None, (signal or 0)+1
+        except Exception as e: return dbc.Alert(f"Error: {e}", color="danger"), dash.no_update, dash.no_update, dash.no_update
 
-    # Callback cerrar modales Gasto
+    # --- 4. MODALES ACCIÓN (Row ID) ---
     @app.callback(
-        Output('expense-edit-modal', 'is_open', allow_duplicate=True),
-        Output('expense-delete-confirm-modal', 'is_open', allow_duplicate=True),
-        [Input('cancel-edit-expense-button', 'n_clicks'),
-         Input('cancel-delete-expense-button', 'n_clicks')],
-        prevent_initial_call=True
+        Output('modal-edit-exp', 'is_open'), Output('store-expense-id-to-edit', 'data'),
+        Output('dropdown-edit-concept', 'value'),
+        Output('input-edit-amount', 'value'), Output('date-edit-expense', 'date'),
+        Output('modal-del-exp', 'is_open'), Output('store-expense-id-to-delete', 'data'),
+        Input('table-expenses-history', 'active_cell'), State('table-expenses-history', 'derived_virtual_data'), prevent_initial_call=True
     )
-    def close_expense_modals(n_edit, n_delete):
-        triggered_id = dash.callback_context.triggered_id
-        if triggered_id in ['cancel-edit-expense-button', 'cancel-delete-expense-button']:
-            return False, False
+    def action_expenses(cell, data):
+        if not cell or not data or 'row_id' not in cell: raise PreventUpdate
+        eid = cell['row_id']; col = cell['column_id']
+        record = next((r for r in data if r['id'] == eid), None)
+        if col == 'editar' and record:
+            d_val = str(record['expense_date']).split('T')[0] if record.get('expense_date') else None
+            # Eliminamos la lógica de categoría del dropdown de editar
+            return True, eid, record.get('expense_concept_id'), record.get('amount'), d_val, False, dash.no_update
+        elif col == 'eliminar':
+            return False, dash.no_update, dash.no_update, dash.no_update, dash.no_update, True, eid
         raise PreventUpdate
 
-    # Callback abrir modales Editar/Eliminar Categoría
     @app.callback(
-        Output('expense_category-edit-modal', 'is_open'),
-        Output('store-expense-category-id-to-edit', 'data'),
-        Output('edit-expense-category-name', 'value'),
-        Output('expense_category-delete-confirm-modal', 'is_open'),
-        Output('store-expense-category-id-to-delete', 'data'),
-        Input('expense-categories-table', 'active_cell'),
-        State('expense-categories-table', 'derived_virtual_data'),
-        prevent_initial_call=True
+        Output('modal-edit-con', 'is_open'), Output('store-concept-id-to-edit', 'data'),
+        Output('dropdown-edit-con-cat', 'value'), Output('input-edit-con-name', 'value'),
+        Output('modal-del-con', 'is_open'), Output('store-concept-id-to-delete', 'data'),
+        Input('table-concepts', 'active_cell'), State('table-concepts', 'derived_virtual_data'), prevent_initial_call=True
     )
-    def open_expense_category_modals(active_cell, data):
-        if not active_cell or 'row' not in active_cell: raise PreventUpdate
-
-        row_idx = active_cell['row']
-        col_id = active_cell['column_id']
-
-        if not data or row_idx >= len(data): raise PreventUpdate
-
-        category_id = data[row_idx]['expense_category_id']
-        category_info = data[row_idx]
-
-        if col_id == 'editar':
-            return True, category_id, category_info['name'], False, dash.no_update
-        elif col_id == 'eliminar':
-            return False, dash.no_update, dash.no_update, True, category_id
-        return False, dash.no_update, dash.no_update, False, dash.no_update
-
-    # Callback confirmar eliminar Categoría (Borrado Suave)
-    @app.callback(
-        Output('expense_category-delete-confirm-modal', 'is_open', allow_duplicate=True),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Input('confirm-delete-expense_category-button', 'n_clicks'),
-        [State('store-expense-category-id-to-delete', 'data'), State('store-data-signal', 'data')],
-        prevent_initial_call=True
-    )
-    def confirm_delete_expense_category(n, category_id, signal):
-        if not n or not category_id: raise PreventUpdate
-        delete_expense_category(category_id, current_user.id) 
-        return False, (signal or 0) + 1
-
-    # Callback cerrar modal eliminar Categoría
-    @app.callback(
-        Output('expense_category-delete-confirm-modal', 'is_open', allow_duplicate=True),
-        Input('cancel-delete-expense_category-button', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def close_expense_category_delete_modal(n):
-        if n: return False
+    def action_concepts(cell, data):
+        if not cell or not data or 'row_id' not in cell: raise PreventUpdate
+        cid = cell['row_id']; col = cell['column_id']
+        if col == 'editar':
+            record = next((r for r in data if r['id'] == cid), None)
+            if record:
+                try:
+                    con_df = load_expense_concepts(current_user.id)
+                    match = con_df[con_df['concept_id'] == cid]
+                    cat_id = int(match.iloc[0]['expense_category_id']) if not match.empty else None
+                except: cat_id = None
+                return True, cid, cat_id, record.get('concept_name'), False, dash.no_update
+        elif col == 'eliminar':
+            return False, dash.no_update, dash.no_update, dash.no_update, True, cid
         raise PreventUpdate
 
-    # Callback guardar edición Categoría
     @app.callback(
-        Output('expense_category-edit-modal', 'is_open', allow_duplicate=True),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Input('save-edited-expense_category-button', 'n_clicks'),
-        [State('store-expense-category-id-to-edit', 'data'),
-         State('edit-expense-category-name', 'value'),
-         State('store-data-signal', 'data')],
-        prevent_initial_call=True
+        Output('modal-edit-cat', 'is_open'), Output('store-exp-cat-id-to-edit', 'data'),
+        Output('input-edit-cat-name', 'value'),
+        Output('modal-del-exp-cat', 'is_open'), Output('store-exp-cat-id-to-delete', 'data'),
+        Input('table-categories', 'active_cell'), State('table-categories', 'derived_virtual_data'), prevent_initial_call=True
     )
-    def save_edited_expense_category(n, category_id, name, signal):
-        if n is None or not category_id: raise PreventUpdate
-        if not name:
-             print("Error: Nombre de categoría no puede estar vacío.")
-             raise PreventUpdate
-
-        update_expense_category(category_id, {"name": name}, current_user.id)
-        return False, (signal or 0) + 1
-
-    # Callback cerrar modal editar Categoría
-    @app.callback(
-        Output('expense_category-edit-modal', 'is_open', allow_duplicate=True),
-        Input('cancel-edit-expense_category-button', 'n_clicks'),
-        prevent_initial_call=True
-    )
-    def close_expense_category_edit_modal(n):
-        if n: return False
+    def action_categories(cell, data):
+        if not cell or not data or 'row_id' not in cell: raise PreventUpdate
+        cid = cell['row_id']; col = cell['column_id']
+        if col == 'editar':
+            record = next((r for r in data if r['id'] == cid), None)
+            return True, cid, record.get('name') if record else "", False, dash.no_update
+        elif col == 'eliminar':
+            return False, dash.no_update, dash.no_update, True, cid
         raise PreventUpdate
-    
-    # --- NUEVO CALLBACK: BORRADO MASIVO DE GASTOS ---
+
+    # --- 5. GUARDAR EDICIONES (Updates) ---
     @app.callback(
-        Output('bulk-delete-expenses-output', 'children'),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Input('delete-selected-expenses-btn', 'n_clicks'),
-        [State('expenses-table', 'selected_row_ids'),
-         State('store-data-signal', 'data')],
+        Output('modal-edit-exp', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Output('alert-edit-expense', 'children'),
+        Input('save-edit-exp', 'n_clicks'),
+        [State('store-expense-id-to-edit', 'data'), State('dropdown-edit-concept', 'value'), State('input-edit-amount', 'value'), State('date-edit-expense', 'date'), State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
-    def delete_selected_expenses(n_clicks, selected_ids, signal_data):
-        if n_clicks is None or n_clicks < 1 or not selected_ids:
-            raise PreventUpdate
-        
-        if not current_user.is_authenticated:
-            raise PreventUpdate
-        
-        user_id = int(current_user.id)
-        
+    def save_edit_exp(n, eid, cid, amt, dt, sig):
+        if not n or not eid: raise PreventUpdate
+        if not cid or not amt or not dt: return True, dash.no_update, dbc.Alert("Datos incompletos.", color="danger")
         try:
-            success, message = delete_expenses_bulk(selected_ids, user_id)
-            if success:
-                new_signal = (signal_data or 0) + 1
-                return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal
-            else:
-                return dbc.Alert(message, color="danger", dismissable=True), dash.no_update
-        except Exception as e:
-            print(f"Error en borrado masivo de gastos: {e}")
-            return dbc.Alert("Ocurrió un error al intentar borrar los gastos.", color="danger", dismissable=True), dash.no_update
+            with engine.connect() as connection:
+                with connection.begin():
+                    connection.execute(text("UPDATE expenses SET expense_concept_id=:cid, amount=:amt, expense_date=:dt WHERE expense_id=:eid"), {"cid":cid, "amt":amt, "dt":dt, "eid":eid})
+            return False, (sig or 0)+1, None
+        except Exception as e: return True, dash.no_update, dbc.Alert(f"Error: {e}", color="danger")
+
+    @app.callback(
+        Output('modal-edit-con', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Output('alert-edit-concept', 'children'),
+        Input('save-edit-con', 'n_clicks'),
+        [State('store-concept-id-to-edit', 'data'), State('input-edit-con-name', 'value'), State('dropdown-edit-con-cat', 'value'), State('store-data-signal', 'data')], prevent_initial_call=True
+    )
+    def save_edit_con(n, cid, name, cat_id, sig):
+        if not n or not cid: raise PreventUpdate
+        try:
+            update_expense_concept(cid, name, cat_id, current_user.id)
+            return False, (sig or 0)+1, None
+        except Exception as e: return True, dash.no_update, dbc.Alert(str(e), color="danger")
+
+    @app.callback(
+        Output('modal-edit-cat', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Output('alert-edit-cat', 'children'),
+        Input('save-edit-cat', 'n_clicks'),
+        [State('store-exp-cat-id-to-edit', 'data'), State('input-edit-cat-name', 'value'), State('store-data-signal', 'data')], prevent_initial_call=True
+    )
+    def save_edit_cat(n, cid, name, sig):
+        if not n or not cid: raise PreventUpdate
+        try:
+            update_expense_category_strict(cid, name, current_user.id)
+            return False, (sig or 0)+1, None
+        except Exception as e: return True, dash.no_update, dbc.Alert(str(e), color="danger")
+
+    # --- 6. ELIMINACIONES ---
+    @app.callback(Output('modal-del-exp', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Input('confirm-del-exp', 'n_clicks'), State('store-expense-id-to-delete', 'data'), State('store-data-signal', 'data'), prevent_initial_call=True)
+    def conf_del_exp(n, eid, sig):
+        if n and eid: delete_expense(eid, current_user.id); return False, (sig or 0)+1
+        raise PreventUpdate
+    @app.callback(Output('modal-del-con', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Input('confirm-del-con', 'n_clicks'), State('store-concept-id-to-delete', 'data'), State('store-data-signal', 'data'), prevent_initial_call=True)
+    def conf_del_con(n, cid, sig):
+        if n and cid: delete_expense_concept(cid, current_user.id); return False, (sig or 0)+1
+        raise PreventUpdate
+    @app.callback(Output('modal-del-exp-cat', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Input('confirm-del-cat', 'n_clicks'), State('store-exp-cat-id-to-delete', 'data'), State('store-data-signal', 'data'), prevent_initial_call=True)
+    def conf_del_cat(n, cid, sig):
+        if n and cid: delete_expense_category(cid, current_user.id); return False, (sig or 0)+1
+        raise PreventUpdate
+
+    # Cierres
+    @app.callback(Output('modal-edit-exp', 'is_open', allow_duplicate=True), Input('cancel-edit-exp', 'n_clicks'), prevent_initial_call=True)
+    def c1(n): return False
+    @app.callback(Output('modal-edit-con', 'is_open', allow_duplicate=True), Input('cancel-edit-con', 'n_clicks'), prevent_initial_call=True)
+    def c2(n): return False
+    @app.callback(Output('modal-edit-cat', 'is_open', allow_duplicate=True), Input('cancel-edit-cat', 'n_clicks'), prevent_initial_call=True)
+    def c3(n): return False
+    @app.callback(Output('modal-del-exp', 'is_open', allow_duplicate=True), Input('cancel-del-exp', 'n_clicks'), prevent_initial_call=True)
+    def c4(n): return False
+    @app.callback(Output('modal-del-con', 'is_open', allow_duplicate=True), Input('cancel-del-con', 'n_clicks'), prevent_initial_call=True)
+    def c5(n): return False
+    @app.callback(Output('modal-del-exp-cat', 'is_open', allow_duplicate=True), Input('cancel-del-cat', 'n_clicks'), prevent_initial_call=True)
+    def c6(n): return False
+
+    # Bulk Delete (CORREGIDO: Limpieza de Selección)
+    @app.callback(
+        Output('output-bulk-del-exp', 'children'),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Output('table-expenses-history', 'selected_rows'), # Clear Selection
+        Output('table-expenses-history', 'selected_row_ids'), # Clear Selection
+        Input('btn-bulk-del-exp', 'n_clicks'),
+        [State('table-expenses-history', 'selected_row_ids'), State('store-data-signal', 'data')],
+        prevent_initial_call=True
+    )
+    def bulk_del(n, ids, sig):
+        if not n or not ids: raise PreventUpdate
+        success, msg = delete_expenses_bulk(ids, current_user.id)
+        alert = dbc.Alert(msg, color="success" if success else "danger", dismissable=True)
+        return alert, (sig or 0)+1, [], [] # Return empty lists
