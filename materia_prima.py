@@ -32,7 +32,7 @@ def get_layout():
         dcc.Store(id='store-material-id-to-edit'),
         dcc.Store(id='store-material-id-to-delete'),
 
-        # --- Modal Editar Insumo (CORREGIDO) ---
+        # --- MODALES (Sin cambios visuales mayores) ---
         dbc.Modal([
             dbc.ModalHeader("Editar Insumo"),
             dbc.ModalBody(dbc.Form([
@@ -47,14 +47,12 @@ def get_layout():
                 dbc.Row([
                     dbc.Col([
                         dbc.Label("Stock Actual Manual:", html_for="edit-material-stock-input"),
-                        # CORREGIDO: step="any" para permitir decimales infinitos
                         dbc.Input(id="edit-material-stock-input", type="number", min=0, step="any", placeholder=0)
-                    ]),
+                    ], xs=12, md=6, className="mb-2"),
                     dbc.Col([
                         dbc.Label("Costo Promedio Manual:", html_for="edit-material-cost-input"),
-                        # CORREGIDO: step="any" para aceptar 0.006
                         dbc.Input(id="edit-material-cost-input", type="number", min=0, step="any", placeholder=0)
-                    ])
+                    ], xs=12, md=6, className="mb-2")
                 ], className="mb-2"),
                 html.Hr(),
 
@@ -68,7 +66,6 @@ def get_layout():
             ]),
         ], id="material-edit-modal", is_open=False),
 
-        # Modal Confirmar Eliminación
         dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación"),
             dbc.ModalBody("¿Estás seguro de que quieres eliminar este insumo?"),
@@ -78,13 +75,14 @@ def get_layout():
             ]),
         ], id="material-delete-confirm-modal", is_open=False),
 
-        # Tabs Principales
+        # --- TABS PRINCIPALES ---
         dbc.Tabs(id="material-sub-tabs", active_tab="sub-tab-material-inventory", children=[
+            
             # --- Tab: Ver Inventario ---
             dbc.Tab(label="Inventario de Insumos", tab_id="sub-tab-material-inventory", children=[
-                html.Div(className="p-4", children=[
-                    html.H3("Inventario Actual de Materia Prima"),
-                    dbc.Button("Borrar Seleccionados", id="delete-selected-materials-btn", color="danger", n_clicks=0, className="mb-2"),
+                html.Div(className="p-2 p-md-4", children=[ # Padding responsivo
+                    html.H3("Inventario Actual de Materia Prima", className="mb-3"),
+                    dbc.Button("Borrar Seleccionados", id="delete-selected-materials-btn", color="danger", n_clicks=0, className="mb-3"),
                     html.Div(id='bulk-delete-materials-output'),
 
                     dash_table.DataTable(
@@ -93,9 +91,7 @@ def get_layout():
                             {"name": "ID", "id": "material_id"}, 
                             {"name": "Nombre Insumo", "id": "name"},
                             {"name": "Unidad", "id": "unit_measure"},
-                            # Stock con 4 decimales
                             {"name": "Stock Actual", "id": "current_stock", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
-                            # CORREGIDO: Costo Promedio con 4 decimales como pediste (acepta 0.0060)
                             {"name": "Costo Promedio", "id": "average_cost", 'type': 'numeric', 'format': Format(precision=4, scheme=Scheme.fixed, symbol=Symbol.yes)},
                             {"name": "Valor Inventario", "id": "valor_inventario", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed, symbol=Symbol.yes)},
                             {"name": "Umbral Alerta", "id": "alert_threshold", 'type': 'numeric', 'format': Format(precision=2, scheme=Scheme.fixed)},
@@ -109,104 +105,120 @@ def get_layout():
                         row_selectable='multi',
                         selected_rows=[],
                         selected_row_ids=[],
-                        style_table={'overflowX': 'auto'},
-                        style_cell={'textAlign': 'left'},
+                        style_table={'overflowX': 'auto'}, # Scroll horizontal
+                        style_cell={
+                            'textAlign': 'left',
+                            'minWidth': '100px', 'width': '120px', 'maxWidth': '300px',
+                            'whiteSpace': 'normal'
+                        },
                         style_data_conditional=[
                             {'if': { 'filter_query': '{current_stock} <= {alert_threshold} && {alert_threshold} > 0', 'column_id': 'current_stock'}, 'backgroundColor': '#FFCCCB', 'color': 'black'}
                         ],
                         style_cell_conditional=[
-                            {'if': {'column_id': 'editar'}, 'cursor': 'pointer', 'textAlign': 'center'},
-                            {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer', 'textAlign': 'center'}
+                            {'if': {'column_id': 'editar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'},
+                            {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer', 'textAlign': 'center', 'width': '80px'}
                         ]
                     )
                 ])
             ]), 
 
-            # --- Tab: Añadir Insumo ---
+            # --- Tab: Añadir Insumo (RESPONSIVO) ---
             dbc.Tab(label="Añadir Insumo", tab_id="sub-tab-add-material", children=[
-                dbc.Card(className="m-4", children=[
+                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ # Margen responsivo
                     dbc.CardBody([
-                        html.H3("Definir Nuevo Insumo"),
+                        html.H3("Definir Nuevo Insumo", className="card-title mb-4"),
                         html.Div(id="add-material-alert"),
+                        
                         dbc.Row([
                             dbc.Col(html.Div([
-                                dbc.Label("Nombre del Insumo:", html_for="material-name-input"),
+                                dbc.Label("Nombre del Insumo:", html_for="material-name-input", className="fw-bold small"),
                                 dbc.Input(id="material-name-input", type="text", placeholder="Ej: Ajo en Polvo")
-                            ]), width=6),
+                            ]), xs=12, md=6, className="mb-3 mb-md-0"),
+                            
                             dbc.Col(html.Div([
-                                dbc.Label("Unidad de Medida:", html_for="material-unit-dropdown"),
+                                dbc.Label("Unidad de Medida:", html_for="material-unit-dropdown", className="fw-bold small"),
                                 dcc.Dropdown(id="material-unit-dropdown", options=unit_options, placeholder="Selecciona unidad...")
-                            ]), width=6),
+                            ]), xs=12, md=6),
                         ], className="mb-3"),
+                        
                          dbc.Row([
                              dbc.Col(html.Div([
-                                 dbc.Label("Stock Actual (Si ya tienes):", html_for="material-stock-input"),
+                                 dbc.Label("Stock Actual (Opcional):", html_for="material-stock-input", className="fw-bold small"),
                                  dbc.Input(id="material-stock-input", type="number", min=0, step="any", placeholder=0)
-                             ]), width=4),
+                             ]), xs=12, md=4, className="mb-3 mb-md-0"),
+                             
                              dbc.Col(html.Div([
-                                 dbc.Label("Costo Total (De ese stock inicial):", html_for="material-cost-input"),
+                                 dbc.Label("Costo Total (Del stock inicial):", html_for="material-cost-input", className="fw-bold small"),
                                  dbc.Input(id="material-cost-input", type="number", min=0, step="any", placeholder=0)
-                             ]), width=4),
+                             ]), xs=12, md=4, className="mb-3 mb-md-0"),
+                             
                              dbc.Col(html.Div([
-                                dbc.Label("Alertar si Stock baja de:", html_for="material-alert-input"),
+                                dbc.Label("Alerta Stock Bajo:", html_for="material-alert-input", className="fw-bold small"),
                                 dbc.Input(id="material-alert-input", type="number", min=0, step="any", placeholder=0)
-                             ]), width=4),
+                             ]), xs=12, md=4),
                          ], className="mb-3"),
-                        dbc.Button("Guardar Nuevo Insumo", id="save-material-button", color="success", n_clicks=0, className="mt-3")
+                         
+                        dbc.Button("Guardar Nuevo Insumo", id="save-material-button", color="success", n_clicks=0, className="mt-3 w-100 w-md-auto")
                     ])
                 ])
             ]), 
 
-            # --- Tab: Registrar Compra ---
+            # --- Tab: Registrar Compra (RESPONSIVO) ---
             dbc.Tab(label="Registrar Compra", tab_id="sub-tab-add-purchase", children=[
-                 dbc.Card(className="m-4", children=[
+                 dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
                      dbc.CardBody([
-                         html.H3("Registrar Compra de Insumos"),
+                         html.H3("Registrar Compra de Insumos", className="card-title mb-4"),
                          html.Div(id="add-purchase-alert"),
+                         
                          dbc.Row([
                              dbc.Col(html.Div([
-                                 dbc.Label("Selecciona el Insumo:", html_for="purchase-material-dropdown"),
+                                 dbc.Label("Selecciona el Insumo:", html_for="purchase-material-dropdown", className="fw-bold small"),
                                  dcc.Dropdown(id='purchase-material-dropdown', placeholder="Selecciona insumo...", options=[])
                              ]), width=12)
                          ], className="mb-3"),
+                         
                          dbc.Row([
                              dbc.Col(html.Div([
-                                 dbc.Label("Cantidad Comprada:", html_for="purchase-quantity-input"),
+                                 dbc.Label("Cantidad Comprada:", html_for="purchase-quantity-input", className="fw-bold small"),
                                  dbc.Input(id="purchase-quantity-input", type="number", min=0.000001, step="any", placeholder=0)
-                             ]), width=6),
+                             ]), xs=12, md=6, className="mb-3 mb-md-0"),
+                             
                               dbc.Col(html.Div([
-                                 dbc.Label("Costo Total de la Compra:", html_for="purchase-cost-input"),
+                                 dbc.Label("Costo Total de la Compra:", html_for="purchase-cost-input", className="fw-bold small"),
                                  dbc.Input(id="purchase-cost-input", type="number", min=0, step="any", placeholder=0)
-                             ]), width=6),
+                             ]), xs=12, md=6),
                          ], className="mb-3"),
+                         
                          dbc.Row([
                               dbc.Col(html.Div([
-                                 dbc.Label("Fecha de Compra:", html_for="purchase-date-picker"),
-                                 dcc.DatePickerSingle(
+                                 dbc.Label("Fecha de Compra:", html_for="purchase-date-picker", className="fw-bold small"),
+                                 html.Div(dcc.DatePickerSingle(
                                      id='purchase-date-picker',
                                      date=today_date,
                                      display_format='YYYY-MM-DD',
-                                     className="w-100"
-                                 )
-                             ]), width=6),
+                                     className="w-100" # Ajuste ancho fecha
+                                 ))
+                             ]), xs=12, md=6, className="mb-3 mb-md-0"),
+                             
                               dbc.Col(html.Div([
-                                 dbc.Label("Proveedor (Opcional):", html_for="purchase-supplier-input"),
+                                 dbc.Label("Proveedor (Opcional):", html_for="purchase-supplier-input", className="fw-bold small"),
                                  dbc.Input(id="purchase-supplier-input", type="text")
-                             ]), width=6),
+                             ]), xs=12, md=6),
                          ], className="mb-3"),
+                         
                          dbc.Row([
                              dbc.Col(html.Div([
-                                 dbc.Label("Notas (Opcional):", html_for="purchase-notes-input"),
+                                 dbc.Label("Notas (Opcional):", html_for="purchase-notes-input", className="fw-bold small"),
                                  dbc.Textarea(id="purchase-notes-input", rows=2)
                              ]), width=12)
                          ], className="mb-3"),
-                         dbc.Button("Guardar Compra", id="save-purchase-button", color="info", n_clicks=0, className="mt-3")
+                         
+                         dbc.Button("Guardar Compra", id="save-purchase-button", color="info", n_clicks=0, className="mt-3 w-100 w-md-auto")
                      ])
                  ])
             ]), 
         ]) 
-    ]) 
-
+    ])
 # --- Callbacks ---
 def register_callbacks(app):
 

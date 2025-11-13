@@ -31,7 +31,9 @@ login_manager.login_view = '/login'
 def load_user(user_id):
     return User.get(user_id)
 
-# --- Layout de la Aplicación Principal ---
+
+# index.py
+
 def get_main_app_layout():
     """Genera el layout principal de la aplicación."""
 
@@ -51,55 +53,64 @@ def get_main_app_layout():
 
     username_display = current_user.username if current_user.is_authenticated else "Usuario"
 
-    return html.Div([ # Contenedor principal sin márgenes para el navbar
+    return html.Div([ 
         dcc.Store(id='store-data-signal'),
         dcc.Download(id="download-sales-excel"),
         dcc.Download(id="download-expenses-excel"),
         dcc.Download(id="download-summary-excel"), 
 
-        # --- NAVBAR MODERNO CON DEGRADE ---
+        # --- NAVBAR MODERNO RESPONSIVO ---
         dbc.Navbar(
             dbc.Container([
-                # Marca / Logo
-                html.A(
-                    dbc.Row([
-                        dbc.Col(html.I(className="fas fa-chart-line", style={"fontSize": "1.5rem", "color": "white"})),
-                        dbc.Col(dbc.NavbarBrand("Empren-D", className="ms-2 fw-bold", style={"fontSize": "1.5rem"})),
-                    ], align="center", className="g-0"),
-                    href="/",
-                    style={"textDecoration": "none"},
-                ),
-                
-                # Saludo y Logout a la derecha
-                dbc.Nav([
-                    dbc.NavItem(html.Span(f"Hola, {username_display}", className="text-white me-3 align-middle", style={"lineHeight": "40px"})),
-                    dbc.NavItem(dbc.Button("Salir", href="/logout", color="light", size="sm", outline=True, className="mt-1")),
-                ], className="ms-auto", navbar=True),
+                dbc.Row([
+                    
+                    # --- FILA SUPERIOR: ICONO + TITULO (CENTRADO) ---
+                    dbc.Col(
+                        html.A(
+                            # Usamos un Div FLEX para pegar el icono al texto y centrarlos juntos
+                            html.Div([
+                                html.I(className="fas fa-chart-line", style={"fontSize": "1.5rem", "color": "white"}),
+                                dbc.NavbarBrand("Empren-D", className="ms-2 fw-bold m-0", style={"fontSize": "1.5rem"}),
+                            ], className="d-flex align-items-center justify-content-center"), # <--- ESTO CENTRA EL GRUPO
+                            
+                            href="/",
+                            style={"textDecoration": "none"},
+                        ),
+                        xs=12, md="auto", # Celular: Ancho completo (para centrar). PC: Auto (izquierda)
+                        className="mb-2 mb-md-0" 
+                    ),
+
+                    # --- FILA INFERIOR: SALUDO + BOTON (CENTRADO) ---
+                    dbc.Col(
+                        dbc.Nav([
+                            html.Div([
+                                html.Span(f"Hola, {username_display}", className="text-white me-3 align-middle"),
+                                dbc.Button("Salir", href="/logout", color="light", size="sm", outline=True)
+                            ], className="d-flex align-items-center justify-content-center") # <--- CENTRADO PERFECTO
+                        ], navbar=True, className="w-100 justify-content-center"), 
+                        xs=12, md="auto"
+                    )
+
+                ], className="w-100 align-items-center justify-content-between g-0"), 
             ], fluid=True),
             
-            # AQUI ESTA EL CAMBIO:
-            # Quitamos 'color="#32a852"' y usamos 'style' para el gradiente
             dark=True,
             className="mb-4 shadow-sm",
             style={
-                "background": "linear-gradient(135deg, #32a852 0%, #2c3e50 100%)", # <-- Degradado aplicado
-                "height": "70px"
+                "background": "linear-gradient(135deg, #32a852 0%, #2c3e50 100%)",
+                "minHeight": "70px",
+                "paddingTop": "10px", 
+                "paddingBottom": "10px"
             }
         ),
 
         # --- CONTENIDO PRINCIPAL ---
         dbc.Container([
-            # Alerta para suscripción
             html.Div(id='subscription-alert', className="mb-3"),
-
-            # Tabs estilizados por CSS
             dbc.Tabs(id="main-tabs", active_tab="tab-dashboard", children=tabs, className="nav-tabs"),
-            
-            # Contenido de la pestaña
-            html.Div(id="tab-content", className="p-0") # Padding controlado por las vistas internas
-        ], fluid=True, className="px-4") # Un poco de padding lateral en la pantalla
+            html.Div(id="tab-content", className="p-0")
+        ], fluid=True, className="px-4")
     ], style={"backgroundColor": "#f4f6f8", "minHeight": "100vh"})
-
 app.layout = html.Div([
     dcc.Location(id='url', refresh=True),
     html.Div(id='page-content')

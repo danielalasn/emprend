@@ -23,16 +23,17 @@ def get_layout():
         dcc.Store(id='store-sale-id-to-edit'),
         dcc.Store(id='store-sale-id-to-delete'),
 
-        dbc.Modal([ # Edit Sale Modal
+        # --- Modales (Sin cambios mayores) ---
+        dbc.Modal([ 
             dbc.ModalHeader("Editar Venta"),
             dbc.ModalBody(dbc.Form([
                 html.Div(id='edit-sale-alert'),
                 dbc.Row([
-                    dbc.Col([dbc.Label("Producto"), dcc.Dropdown(id='edit-sale-product', options=[])]),
-                    dbc.Col([dbc.Label("Cantidad"), dbc.Input(id='edit-sale-quantity', type='number')]),
+                    dbc.Col([dbc.Label("Producto"), dcc.Dropdown(id='edit-sale-product', options=[])], xs=12, className="mb-2"),
+                    dbc.Col([dbc.Label("Cantidad"), dbc.Input(id='edit-sale-quantity', type='number')], xs=12, className="mb-2"),
                 ]),
                 dbc.Label("Fecha de Venta", className="mt-2"),
-                dcc.DatePickerSingle(id='edit-sale-date')
+                html.Div(dcc.DatePickerSingle(id='edit-sale-date', className="w-100")) # Ajuste ancho fecha
             ])),
             dbc.ModalFooter([
                 dbc.Button("Cancelar", id="cancel-edit-sale-button", color="secondary", className="ms-auto"),
@@ -40,7 +41,7 @@ def get_layout():
             ]),
         ], id="sale-edit-modal", is_open=False),
 
-        dbc.Modal([ # Delete Sale Modal
+        dbc.Modal([ 
              dbc.ModalHeader("Confirmar Eliminación"),
              dbc.ModalBody("¿Estás seguro de que quieres eliminar esta venta? El stock del producto será restaurado."),
              dbc.ModalFooter([
@@ -49,19 +50,33 @@ def get_layout():
              ]),
          ], id="sale-delete-confirm-modal", is_open=False),
 
-         dbc.Card(className="m-4", children=[ # Register Sale Card
+         # --- TARJETA DE REGISTRO (CORREGIDO GRID RESPONSIVO) ---
+         dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ # Margen reducido en móvil (m-2)
              dbc.CardBody([
-                 html.H3("Registrar una Nueva Venta", className="card-title"),
+                 html.H3("Registrar una Nueva Venta", className="card-title mb-4"),
                  html.Div(id="sale-validation-alert"),
+                 
+                 # AQUÍ ESTÁ EL CAMBIO CLAVE:
                  dbc.Row([
-                     dbc.Col([html.Label("Selecciona un Producto"), dcc.Dropdown(id='product-dropdown', placeholder="Selecciona un producto...")], width=6),
-                     dbc.Col([html.Label("Cantidad Vendida"), dbc.Input(id='quantity-input', type='number', min=1, step=1, placeholder=0)], width=6),
+                     # Celular: 12 columnas (Full width). PC: 6 columnas (Mitad)
+                     dbc.Col([
+                         html.Label("Selecciona un Producto", className="fw-bold small"), 
+                         dcc.Dropdown(id='product-dropdown', placeholder="Selecciona un producto...")
+                     ], xs=12, md=6, className="mb-3 mb-md-0"),
+                     
+                     # Celular: 12 columnas (Full width). PC: 6 columnas (Mitad)
+                     dbc.Col([
+                         html.Label("Cantidad Vendida", className="fw-bold small"), 
+                         dbc.Input(id='quantity-input', type='number', min=1, step=1, placeholder=0)
+                     ], xs=12, md=6),
                  ], className="mb-3"),
-                 dbc.Button("Registrar Venta", id="submit-sale-button", color="primary", n_clicks=0, className="mt-3")
+                 
+                 dbc.Button("Registrar Venta", id="submit-sale-button", color="primary", n_clicks=0, className="mt-3 w-100 w-md-auto")
              ])
          ]),
 
-         dbc.Accordion([ # Import Sales Accordion
+         # --- ACORDEONES (Ajustados márgenes) ---
+         dbc.Accordion([ 
              dbc.AccordionItem(
                  children=[ 
                      dcc.Upload(
@@ -90,9 +105,9 @@ def get_layout():
                  ],
                  title="Importar Historial de Ventas desde Excel"
              )
-         ], start_collapsed=True, className="m-4"),
+         ], start_collapsed=True, className="m-2 m-md-4"),
 
-         dbc.Accordion([ # Sales History Accordion
+         dbc.Accordion([ 
              dbc.AccordionItem(
                  children=[ 
                      dbc.Button("Descargar Excel", id="btn-download-sales-excel", color="success", className="mb-3 me-2"),
@@ -116,9 +131,9 @@ def get_layout():
                         sort_action='native',
                         row_selectable='multi',
                         selected_rows=[],
-                        style_table={'overflowX': 'auto'},
                         selected_row_ids=[],
                         sort_by=[{'column_id': 'sale_date_display', 'direction': 'desc'}],
+                        style_table={'overflowX': 'auto'}, # Tu corrección de scroll
                         style_cell_conditional=[
                             {'if': {'column_id': 'editar'}, 'cursor': 'pointer'},
                             {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
@@ -127,10 +142,8 @@ def get_layout():
                  ], 
                  title="Ver Historial de Ventas"
              )
-         ], start_collapsed=True, className="m-4")
+         ], start_collapsed=True, className="m-2 m-md-4")
      ])
-
-
 def register_callbacks(app):
 
     # --- CALLBACK: Registrar Venta ---

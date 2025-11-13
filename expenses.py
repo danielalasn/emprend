@@ -26,15 +26,16 @@ def get_layout():
         dcc.Store(id='store-expense-category-id-to-delete'),
         dcc.Store(id='store-expense-category-id-to-edit'),
 
+        # --- MODALES (Sin cambios de diseño) ---
         dbc.Modal([ # Edit Expense Modal
             dbc.ModalHeader("Editar Gasto"),
             dbc.ModalBody(dbc.Form([
                 dbc.Row([
-                    dbc.Col([dbc.Label("Tipo de Gasto"), dcc.Dropdown(id='edit-expense-category', options=[])]),
-                    dbc.Col([dbc.Label("Monto"), dbc.Input(id='edit-expense-amount', type='number')]),
+                    dbc.Col([dbc.Label("Tipo de Gasto"), dcc.Dropdown(id='edit-expense-category', options=[])], xs=12, className="mb-2"),
+                    dbc.Col([dbc.Label("Monto"), dbc.Input(id='edit-expense-amount', type='number')], xs=12, className="mb-2"),
                 ]),
                 dbc.Label("Fecha del Gasto", className="mt-2"),
-                dcc.DatePickerSingle(id='edit-expense-date')
+                html.Div(dcc.DatePickerSingle(id='edit-expense-date', className="w-100"))
             ])),
             dbc.ModalFooter([
                 dbc.Button("Cancelar", id="cancel-edit-expense-button", color="secondary", className="ms-auto"),
@@ -72,20 +73,27 @@ def get_layout():
             ]),
         ], id="expense_category-delete-confirm-modal", is_open=False),
 
+        # --- PESTAÑAS PRINCIPALES ---
         dbc.Tabs(id="expense-sub-tabs", active_tab="sub-tab-add-expense", children=[
+            
+            # --- TAB 1: AÑADIR GASTO ---
             dbc.Tab(label="Añadir Gasto", tab_id="sub-tab-add-expense", children=[
-                dbc.Card(className="m-4", children=[
+                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ # Márgenes responsivos
                     dbc.CardBody([
-                        html.H3("Registrar un Gasto Operativo"),
+                        html.H3("Registrar un Gasto Operativo", className="card-title mb-4"),
                         html.Div(id="add-expense-alert"),
+                        
+                        # Fila Responsiva: Inputs se apilan en celular
                         dbc.Row([
-                            dbc.Col([html.Label("Tipo de Gasto"), dcc.Dropdown(id='expense-category-dropdown', placeholder="Selecciona un tipo de gasto...")], width=6),
-                            dbc.Col([html.Label("Monto"), dbc.Input(id='expense-amount-input', type='number', min=0, placeholder="0.00")], width=6),
+                            dbc.Col([html.Label("Tipo de Gasto", className="fw-bold small"), dcc.Dropdown(id='expense-category-dropdown', placeholder="Selecciona un tipo de gasto...")], xs=12, md=6, className="mb-3 mb-md-0"),
+                            dbc.Col([html.Label("Monto", className="fw-bold small"), dbc.Input(id='expense-amount-input', type='number', min=0, placeholder="0.00")], xs=12, md=6),
                         ], className="mb-3"),
-                        dbc.Button("Guardar Gasto", id="save-expense-button", color="danger", className="mt-3")
+                        
+                        dbc.Button("Guardar Gasto", id="save-expense-button", color="danger", className="mt-3 w-100 w-md-auto")
                     ])
                 ]),
 
+                # Acordeón Importar Excel
                 dbc.Accordion([
                     dbc.AccordionItem(
                         children=[
@@ -99,28 +107,26 @@ def get_layout():
                                 },
                                 multiple=False
                             ),
-                            
                             dbc.Alert([
                                 html.H5("Formato Requerido:", className="alert-heading"),
-                                html.P("El archivo Excel debe tener las siguientes columnas (exactamente como se escriben):"),
+                                html.P("El archivo Excel debe tener las siguientes columnas:"),
                                 html.Ul([
-                                    html.Li([html.B("nombre"), " (El 'Tipo de Gasto' ya debe existir en tu lista de categorías)"]),
-                                    html.Li([html.B("monto"), " (El valor numérico del gasto)"]),
-                                    html.Li([html.B("fecha"), " (Formato AAAA-MM-DD o similar)"]),
+                                    html.Li([html.B("nombre"), " (El 'Tipo de Gasto' ya debe existir)"]),
+                                    html.Li([html.B("monto"), " (Valor numérico)"]),
+                                    html.Li([html.B("fecha"), " (Formato AAAA-MM-DD)"]),
                                 ]),
                             ], color="info", className="mt-2"),
-                            
                             html.Div(id='upload-expenses-output')
                         ],
                         title="Importar Historial de Gastos desde Excel"
                     )
-                ], start_collapsed=True, className="m-4"),
+                ], start_collapsed=True, className="m-2 m-md-4"),
 
+                # Acordeón Ver Historial
                 dbc.Accordion([
                     dbc.AccordionItem(
                         children=[
                             dbc.Button("Descargar Excel", id="btn-download-expenses-excel", color="success", className="mb-3 me-2"),
-                            
                             dbc.Button("Borrar Seleccionados", id="delete-selected-expenses-btn", color="danger", n_clicks=0, className="mb-3"),
                             html.Div(id='bulk-delete-expenses-output'), 
 
@@ -140,8 +146,8 @@ def get_layout():
                                 sort_by=[{'column_id': 'expense_date_display', 'direction': 'desc'}],
                                 row_selectable='multi',
                                 selected_rows=[],
-                                style_table={'overflowX': 'auto'},
                                 selected_row_ids=[],
+                                style_table={'overflowX': 'auto'}, # Scroll horizontal vital
                                 style_cell_conditional=[
                                     {'if': {'column_id': 'editar'}, 'cursor': 'pointer'},
                                     {'if': {'column_id': 'eliminar'}, 'cursor': 'pointer'}
@@ -150,31 +156,38 @@ def get_layout():
                         ],
                         title="Ver Historial de Gastos"
                     )
-                ], start_collapsed=True, className="m-4")
+                ], start_collapsed=True, className="m-2 m-md-4")
             ]),
+            
+            # --- TAB 2: GESTIONAR GASTOS (AQUÍ ESTABA EL ERROR GRAVE) ---
             dbc.Tab(label="Gestionar Gastos", tab_id="sub-tab-manage-expenses", children=[
                 dbc.Row([
+                    
+                    # COLUMNA IZQUIERDA: Crear Categoría
+                    # Agregamos 'className="mb-4 mb-md-0"' para dar espacio abajo solo en celular
                     dbc.Col([
-                        dbc.Card(className="m-4", children=[
+                        # CAMBIO: Quitamos 'h-100' para que la tarjeta NO se estire
+                        dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ 
                             dbc.CardBody([
-                                html.H3("Crear Nuevo Tipo de Gasto"),
+                                html.H3("Crear Nuevo Tipo", className="card-title h4 mb-3"),
                                 html.Div(id="add-expense-category-alert"),
-                                dbc.Input(id="expense-category-name-input", placeholder="Nombre del nuevo gasto", className="mb-2"),
-                                dbc.Button("Guardar Gasto", id="save-expense-category-button", color="primary")
+                                dbc.Input(id="expense-category-name-input", placeholder="Nombre del nuevo gasto", className="mb-3"),
+                                dbc.Button("Guardar Gasto", id="save-expense-category-button", color="primary", className="w-100")
                             ])
                         ])
-                    ], width=4),
+                    ], xs=12, md=4, className="mb-4 mb-md-0"), # <--- Margen inferior añadido aquí
+                    
+                    # COLUMNA DERECHA: Tabla de Categorías
                     dbc.Col([
-                        html.Div(className="p-4", children=[
-                            html.H3("Tipos de Gastos Existentes"),
-                            html.Div(id='expense-categories-table-container')
+                        html.Div(className="p-2 p-md-4", children=[
+                            html.H3("Tipos de Gastos Existentes", className="mb-3"),
+                            html.Div(id='expense-categories-table-container', style={'overflowX': 'auto'}) # Scroll horizontal
                         ])
-                    ], width=8)
+                    ], xs=12, md=8)
                 ])
             ])
         ])
     ])
-
 def register_callbacks(app):
     @app.callback(
         Output('add-expense-alert', 'children'),

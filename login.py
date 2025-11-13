@@ -105,7 +105,7 @@ def get_login_layout():
             dbc.Modal([
                 dbc.ModalHeader(dbc.ModalTitle("Ayuda y Soporte")), # Título genérico
                 dbc.ModalBody([
-                    html.P("La gestión de cuentas (registro y recuperación) se realiza manualmente por seguridad.", className="text-muted"),
+                    html.P("La gestión de cuentas (registro y recuperación) se realiza manualmente por el equipo de Empren-D.", className="text-muted"),
                     html.P("Por favor, contacta al administrador con tu solicitud:", className="fw-bold"),
                     html.Hr(),
                     html.Div([

@@ -41,7 +41,6 @@ def get_layout():
         {'label': 'Gramo(s)', 'value': 'g'}, {'label': 'Par(es)', 'value': 'par'},
     ]
 
-
     return html.Div([
         dcc.Store(id='store-product-id-to-edit'),
         dcc.Store(id='store-product-id-to-delete'),
@@ -49,37 +48,32 @@ def get_layout():
         dcc.Store(id='store-category-id-to-delete'),
         dcc.Store(id='store-edit-material-quantities', storage_type='memory'),
 
-        # --- Modal Editar Producto ---
+        # --- MODALES (Sin cambios visuales mayores) ---
         dbc.Modal([
             dbc.ModalHeader("Editar Producto"),
             dbc.ModalBody(dbc.Form([
                 html.Div(id='edit-product-alert'),
                 dbc.Row([
-                    dbc.Col([dbc.Label("Nombre"), dbc.Input(id='edit-product-name')]),
-                    dbc.Col([dbc.Label("Categoría"), dcc.Dropdown(id='edit-product-category', options=category_opts)]),
+                    dbc.Col([dbc.Label("Nombre"), dbc.Input(id='edit-product-name')], xs=12, md=6, className="mb-2"),
+                    dbc.Col([dbc.Label("Categoría"), dcc.Dropdown(id='edit-product-category', options=category_opts)], xs=12, md=6, className="mb-2"),
                 ]),
                 dbc.Label("Descripción", className="mt-2"),
-                dbc.Textarea(id='edit-product-desc'),
+                dbc.Textarea(id='edit-product-desc', className="mb-2"),
                 dbc.Row([
-                    dbc.Col([dbc.Label("Costo Base (Sin Insumos)"), dbc.Input(id='edit-product-cost', type='number', min=0, step=0.01, placeholder=0)]),
-                    dbc.Col([dbc.Label("Precio Venta"), dbc.Input(id='edit-product-price', type='number', min=0, step=0.01, placeholder=0)]),
-                    dbc.Col([dbc.Label("Stock Actual"), dbc.Input(id='edit-product-stock', type='number', min=0, step=1, placeholder=0)]),
-                    dbc.Col([dbc.Label("Alerta Stock Bajo"), dbc.Input(id='edit-product-alert', type='number', min=0, step=1, placeholder=0)]),
+                    dbc.Col([dbc.Label("Costo Base"), dbc.Input(id='edit-product-cost', type='number', min=0, step=0.01)], xs=6, md=3),
+                    dbc.Col([dbc.Label("Precio Venta"), dbc.Input(id='edit-product-price', type='number', min=0, step=0.01)], xs=6, md=3),
+                    dbc.Col([dbc.Label("Stock"), dbc.Input(id='edit-product-stock', type='number', min=0, step=1)], xs=6, md=3),
+                    dbc.Col([dbc.Label("Alerta"), dbc.Input(id='edit-product-alert', type='number', min=0, step=1)], xs=6, md=3),
                 ], className="mt-2"),
                 html.Hr(),
                 html.H5("Insumos Utilizados", className="mt-3 mb-3"),
                  dbc.Row([
                     dbc.Col(html.Div([
                         dbc.Label("Selecciona los insumos:", html_for="edit-product-materials-dropdown"),
-                        dcc.Dropdown(
-                            id="edit-product-materials-dropdown",
-                            options=material_opts,
-                            multi=True,
-                            placeholder="Selecciona insumos..."
-                        )
+                        dcc.Dropdown(id="edit-product-materials-dropdown", options=material_opts, multi=True, placeholder="Selecciona insumos...")
                     ]), width=12)
                 ], className="mb-3"),
-                html.Div(id='edit-product-material-quantities-container', children=[]), # Container for dynamic inputs
+                html.Div(id='edit-product-material-quantities-container', children=[]),
             ])),
             dbc.ModalFooter([
                 dbc.Button("Cancelar", id="cancel-edit-product-button", color="secondary", className="ms-auto"),
@@ -87,17 +81,15 @@ def get_layout():
             ]),
         ], id="product-edit-modal", is_open=False, size="lg"),
 
-        # --- Modal Confirmar Eliminación Producto ---
         dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación"),
-            dbc.ModalBody("¿Estás seguro de que quieres eliminar este producto? Se ocultará de las listas, pero se mantendrá en los reportes históricos."),
+            dbc.ModalBody("¿Estás seguro de que quieres eliminar este producto?"),
             dbc.ModalFooter([
                 dbc.Button("Cancelar", id="cancel-delete-product-button", color="secondary", className="ms-auto"),
                 dbc.Button("Eliminar", id="confirm-delete-product-button", color="danger"),
             ]),
         ], id="product-delete-confirm-modal", is_open=False),
 
-        # --- Modal Editar Categoría ---
         dbc.Modal([
             dbc.ModalHeader("Editar Categoría"),
             dbc.ModalBody(dbc.Form([dbc.Label("Nombre de la Categoría"), dbc.Input(id='edit-category-name', type='text')])),
@@ -107,28 +99,25 @@ def get_layout():
             ]),
         ], id="category-edit-modal", is_open=False),
 
-        # --- Modal Confirmar Eliminación Categoría ---
         dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación"),
-            dbc.ModalBody("¿Estás seguro de que quieres eliminar esta categoría? Se ocultará de las listas y se desasignará de todos los productos."),
+            dbc.ModalBody("¿Estás seguro de que quieres eliminar esta categoría?"),
             dbc.ModalFooter([
                 dbc.Button("Cancelar", id="cancel-delete-category-button", color="secondary", className="ms-auto"),
                 dbc.Button("Eliminar", id="confirm-delete-category-button", color="danger"),
             ]),
         ], id="category-delete-confirm-modal", is_open=False),
 
-        # --- Tabs Principales ---
+        # --- TABS PRINCIPALES ---
         dbc.Tabs(id="product-sub-tabs", active_tab="sub-tab-inventory", children=[
+            
             # --- Tab: Inventario ---
             dbc.Tab(label="Inventario", tab_id="sub-tab-inventory", children=[
-                html.Div(className="p-4", children=[
-                    html.H3("Inventario de Productos"),
-                    
-                    # --- INICIO DE MODIFICACIÓN: BORRADO MASIVO ---
-                    dbc.Button("Borrar Seleccionados", id="delete-selected-products-btn", color="danger", n_clicks=0, className="mb-2"),
+                html.Div(className="p-2 p-md-4", children=[
+                    html.H3("Inventario de Productos", className="mb-3"),
+                    dbc.Button("Borrar Seleccionados", id="delete-selected-products-btn", color="danger", n_clicks=0, className="mb-3"),
                     html.Div(id='bulk-delete-products-output'),
                     
-                    # La DataTable ahora se define aquí
                     dash_table.DataTable(
                         id='products-table',
                         columns=[
@@ -140,93 +129,102 @@ def get_layout():
                             {"name": "Stock", "id": "stock"}, {"name": "Alerta", "id": "alert_threshold"},
                             {"name": "Editar", "id": "editar"}, {"name": "Eliminar", "id": "eliminar"}
                         ],
-                        data=[], # Se inicializa vacía
+                        data=[], 
                         hidden_columns=['product_id'], 
                         css=[{"selector": ".show-hide", "rule": "display: none"}],
                         page_size=15, 
                         sort_action='native', 
                         filter_action='native',
-                        # Propiedades de selección
                         row_selectable='multi',
                         selected_rows=[],
                         selected_row_ids=[],
-                        style_table={'overflowX': 'auto'},
-                        # Estilos
+                        style_table={'overflowX': 'auto'}, # Scroll horizontal
                         style_cell={'textAlign': 'left'}, 
                         style_cell_conditional=[{'if': {'column_id': c}, 'cursor': 'pointer', 'textAlign': 'center'} for c in ['editar', 'eliminar']]
                     )
-                    # --- FIN DE MODIFICACIÓN ---
                 ])
             ]),
 
-            # --- Tab: Añadir Producto ---
+            # --- Tab: Añadir Producto (RESPONSIVO) ---
             dbc.Tab(label="Añadir Producto", tab_id="sub-tab-add-product", children=[
-                dbc.Card(className="m-4", children=[
+                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ # Margen responsivo
                     dbc.CardBody([
-                        html.H3("Añadir un Nuevo Producto"), html.Div(id="add-product-alert"),
+                        html.H3("Añadir un Nuevo Producto", className="card-title mb-4"), 
+                        html.Div(id="add-product-alert"),
+                        
                         dbc.Row([
-                            dbc.Col(html.Div([html.Label("Nombre"), dbc.Input(id="product-name-input")]), width=6),
-                            dbc.Col(html.Div([html.Label("Categoría"), dcc.Dropdown(id="product-category-dropdown", options=category_opts, placeholder="Selecciona...") ]), width=6),
+                            dbc.Col(html.Div([html.Label("Nombre", className="fw-bold small"), dbc.Input(id="product-name-input")]), xs=12, md=6, className="mb-3 mb-md-0"),
+                            dbc.Col(html.Div([html.Label("Categoría", className="fw-bold small"), dcc.Dropdown(id="product-category-dropdown", options=category_opts, placeholder="Selecciona...") ]), xs=12, md=6),
                         ], className="mb-3"),
-                        dbc.Row([dbc.Col(html.Div([html.Label("Descripción (Opcional)"), dbc.Textarea(id="product-desc-input")]), width=12)], className="mb-3"),
+                        
+                        dbc.Row([dbc.Col(html.Div([html.Label("Descripción (Opcional)", className="fw-bold small"), dbc.Textarea(id="product-desc-input")]), width=12)], className="mb-3"),
+                        
                         dbc.Row([
-                            dbc.Col(html.Div([html.Label("Costo Base"), dbc.Input(id="product-cost-input", type="number", min=0, step=0.01, placeholder=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Precio Venta"), dbc.Input(id="product-price-input", type="number", min=0, step=0.01, placeholder=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Stock Inicial"), dbc.Input(id="product-stock-input", type="number", min=0, step=1, placeholder=0)]), width=3),
-                            dbc.Col(html.Div([html.Label("Alerta Stock"), dbc.Input(id="product-alert-input", type="number", min=0, step=1, placeholder=0 )]), width=3),
+                            dbc.Col(html.Div([html.Label("Costo Base", className="fw-bold small"), dbc.Input(id="product-cost-input", type="number", min=0, step=0.01, placeholder=0)]), xs=6, md=3),
+                            dbc.Col(html.Div([html.Label("Precio Venta", className="fw-bold small"), dbc.Input(id="product-price-input", type="number", min=0, step=0.01, placeholder=0)]), xs=6, md=3),
+                            dbc.Col(html.Div([html.Label("Stock Inicial", className="fw-bold small"), dbc.Input(id="product-stock-input", type="number", min=0, step=1, placeholder=0)]), xs=6, md=3),
+                            dbc.Col(html.Div([html.Label("Alerta Stock", className="fw-bold small"), dbc.Input(id="product-alert-input", type="number", min=0, step=1, placeholder=0 )]), xs=6, md=3),
                         ], className="mb-3"),
+                        
                         html.Hr(), html.H4("Insumos Utilizados", className="mt-4 mb-3"),
                         dbc.Row([
                             dbc.Col(html.Div([
-                                dbc.Label("Selecciona Insumos:", html_for="add-product-materials-dropdown"),
+                                dbc.Label("Selecciona Insumos:", html_for="add-product-materials-dropdown", className="fw-bold small"),
                                 dcc.Dropdown(id="add-product-materials-dropdown", options=material_opts, multi=True, placeholder="Selecciona...")
                             ]), width=12)
                         ], className="mb-3"),
                         html.Div(id='add-product-material-quantities-container', children=[]),
-                        html.Hr(),
-                        dbc.Button("Guardar Producto", id="save-product-button", color="success", n_clicks=0, className="mt-3")
+                        
+                        dbc.Button("Guardar Producto", id="save-product-button", color="success", n_clicks=0, className="mt-3 w-100 w-md-auto")
                     ])
                 ])
             ]),
 
-            # --- Tab: Añadir Stock ---
+            # --- Tab: Añadir Stock (RESPONSIVO) ---
             dbc.Tab(label="Añadir Stock", tab_id="sub-tab-add-stock", children=[
-                dbc.Card(className="m-4", children=[
+                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
                     dbc.CardBody([
-                        html.H3("Añadir Stock Producto Existente"), html.Div(id="add-stock-alert"),
+                        html.H3("Añadir Stock Producto Existente", className="card-title mb-4"), 
+                        html.Div(id="add-stock-alert"),
+                        
                         dbc.Row([
-                            dbc.Col([html.Label("Producto"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona...")], width=6),
-                            dbc.Col([html.Label("Cantidad a Añadir"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1, placeholder=0)], width=6),
+                            dbc.Col([html.Label("Producto", className="fw-bold small"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona...")], xs=12, md=6, className="mb-3 mb-md-0"),
+                            dbc.Col([html.Label("Cantidad a Añadir", className="fw-bold small"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1, placeholder=0)], xs=12, md=6),
                         ], className="mb-3"),
-                        dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3")
+                        
+                        dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3 w-100 w-md-auto")
                     ])
                 ])
             ]),
 
-            # --- Tab: Gestionar Categorías ---
+            # --- Tab: Gestionar Categorías (CORREGIDO VISUALMENTE) ---
             dbc.Tab(label="Gestionar Categorías", tab_id="sub-tab-categories", children=[
                 dbc.Row([
+                    
+                    # COLUMNA IZQUIERDA: Crear Categoría
+                    # xs=12 (Celular) + mb-4 (Espacio abajo) | md=4 (PC)
                     dbc.Col([
-                        dbc.Card(className="m-4", children=[
+                        dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ # Sin h-100 para que no se estire
                             dbc.CardBody([
-                                html.H3("Crear Nueva Categoría"), html.Div(id="add-category-alert"),
-                                dbc.Input(id="category-name-input", placeholder="Nombre...", className="mb-2"),
-                                dbc.Button("Guardar Categoría", id="save-category-button", color="primary")
+                                html.H3("Crear Nueva Categoría", className="card-title h4 mb-3"), 
+                                html.Div(id="add-category-alert"),
+                                dbc.Input(id="category-name-input", placeholder="Nombre...", className="mb-3"),
+                                dbc.Button("Guardar Categoría", id="save-category-button", color="primary", className="w-100")
                             ])
                         ])
-                    ], width=4),
+                    ], xs=12, md=4, className="mb-4 mb-md-0"), # Margen inferior en móvil
+                    
+                    # COLUMNA DERECHA: Tabla
                     dbc.Col([
-                        html.Div(className="p-4", children=[
-                            html.H3("Categorías Existentes"), 
-                            # Contenedor para la tabla de categorías (esta puede quedarse así)
-                            html.Div(id='categories-table-container') 
+                        html.Div(className="p-2 p-md-4", children=[
+                            html.H3("Categorías Existentes", className="mb-3"), 
+                            html.Div(id='categories-table-container', style={'overflowX': 'auto'}) 
                         ])
-                    ], width=8)
+                    ], xs=12, md=8)
                 ])
             ]),
-        ]) # Fin Tabs
-    ]) # Fin Div Principal
-
+        ]) 
+    ])
 # --- Callbacks ---
 def register_callbacks(app):
 

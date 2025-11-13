@@ -19,11 +19,10 @@ def get_layout():
     # Estilo común para las tarjetas de KPIs
     card_style = {"border": "none", "borderRadius": "10px"}
     
-    return html.Div(className="p-2 p-md-4", children=[ # PADDING RESPONSIVO: p-2 en cel, p-4 en PC
+    return html.Div(className="p-2 p-md-4", children=[ 
         
         # --- FILA 1: FILTRO DE FECHA ---
         dbc.Row([
-            # En celular (xs) ocupa 12 columnas (todo el ancho), en escritorio (md) se ajusta al contenido
             dbc.Col(html.H4("Dashboard General", className="fw-bold text-secondary"), xs=12, md='auto', className="mb-2 mb-md-0"),
             
             dbc.Col(
@@ -33,9 +32,9 @@ def get_layout():
                     end_date=today,
                     display_format='YYYY-MM-DD',
                     style={'fontSize': '14px'},
-                    className="w-100" # Clase CSS para asegurar ancho completo en móvil
+                    className="w-100" 
                 ),
-            xs=12, md=True, className="ps-md-4 mb-2 mb-md-0"), # Margen izquierdo solo en PC
+            xs=12, md=True, className="ps-md-4 mb-2 mb-md-0"),
             
             dbc.Col(
                 dbc.Switch(
@@ -47,92 +46,90 @@ def get_layout():
             xs=12, md="auto")
         ], align="center", className="mb-4"),
 
-        # --- FILA 2: KPIs FINANCIEROS (RESPONSIVO) ---
-        # Cambio clave: xs=12 (celular: 1 por fila), sm=6 (tablet: 2 por fila), lg=3 (PC: 4 por fila)
+        # --- FILA 2: KPIs FINANCIEROS ---
+        # align="stretch" iguala la altura de las COLUMNAS.
+        # g-3 maneja el espaciado horizontal Y vertical automáticamente.
         dbc.Row([
             # 1. Ingresos
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Ingresos Totales", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H2(id="kpi-total-revenue", className="card-title fw-bold text-dark")
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
+                ], className="flex-grow-1 p-3") # flex-grow-1 llena el espacio vacío
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
 
             # 2. Ganancia Bruta
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Ganancia Bruta", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H2(id="kpi-gross-profit", className="card-title fw-bold text-success")
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
+                ], className="flex-grow-1 p-3")
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
 
             # 3. Gastos
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Gastos Operativos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H2(id="kpi-total-expenses", className="card-title fw-bold text-danger")
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
+                ], className="flex-grow-1 p-3")
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
 
             # 4. Ganancia Neta
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Ganancia Neta", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H2(id="kpi-net-profit", className="card-title fw-bold") 
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3),
-        ], className="mb-4 g-3"), # g-3 maneja el espacio entre columnas automáticamente
+                ], className="flex-grow-1 p-3")
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
+        ], className="mb-4 g-3", align="stretch"),
 
-        # --- FILA 3: KPIs DE INVENTARIO Y ALERTAS (RESPONSIVO) ---
+        # --- FILA 3: KPIs DE INVENTARIO Y ALERTAS ---
         dbc.Row([
             # KPI Inversión Productos
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Inv. Productos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H3(id="kpi-product-investment", className="card-title fw-bold")
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
+                ], className="flex-grow-1 p-3")
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
 
             # KPI Inversión Insumos
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Inv. Insumos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.H3(id="kpi-material-investment", className="card-title fw-bold")
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
+                ], className="flex-grow-1 p-3")
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
 
             # Alertas Productos
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Alertas Productos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.Div(id="low-stock-alerts-products", style={"maxHeight": "60px", "overflowY": "auto", "fontSize": "0.85rem"})
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3, className="mb-3 mb-lg-0"),
+                ], className="flex-grow-1 p-3")
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
 
             # Alertas Insumos
             dbc.Col(dbc.Card([
                 dbc.CardBody([
                     html.H6("Alertas Insumos", className="card-subtitle text-muted mb-2 small text-uppercase fw-bold"),
                     html.Div(id="low-stock-alerts-materials", style={"maxHeight": "60px", "overflowY": "auto", "fontSize": "0.85rem"})
-                ], className="p-3")
-            ], className="h-100 shadow-sm", style=card_style), xs=12, sm=6, lg=3),
+                ], className="flex-grow-1 p-3")
+            ], className="h-100 d-flex flex-column shadow-sm", style=card_style), xs=12, sm=6, lg=3),
         ], className="mb-4 g-3", align="stretch"),
 
-        # --- FILAS DE GRÁFICOS (RESPONSIVO) ---
-        # Antes: width=8 y width=4. 
-        # Ahora: xs=12 (celular ocupa todo el ancho), lg=8 (PC mantiene proporción)
+        # --- FILAS DE GRÁFICOS ---
         dbc.Row([
-            dbc.Col(dbc.Card(dcc.Graph(id="monthly-summary-chart"), className="shadow-sm border-0 p-2"), xs=12, lg=8, className="mb-3 mb-lg-0"),
+            dbc.Col(dbc.Card(dcc.Graph(id="monthly-summary-chart"), className="shadow-sm border-0 p-2"), xs=12, lg=8),
             dbc.Col(dbc.Card(dcc.Graph(id="waterfall-profit-summary"), className="shadow-sm border-0 p-2"), xs=12, lg=4),
         ], className="mb-4 g-3"),
         
         dbc.Row([
-            # xs=12 (celular apilado), md=6 (tablet/PC mitad y mitad)
             dbc.Col(
                 dbc.Card(
                     html.Div(dcc.Graph(id="chart-sales-by-product"), style={'overflowX': 'auto'}),
                     className="shadow-sm border-0 p-2"
-                ), xs=12, md=6, className="mb-3 mb-md-0"
+                ), xs=12, md=6
             ),
             dbc.Col(
                 dbc.Card(
@@ -146,6 +143,8 @@ def get_layout():
             dbc.Col(dbc.Card(dcc.Graph(id="sales-over-time-chart"), className="shadow-sm border-0 p-2"), width=12)
         ], className="mb-4")
     ])
+
+
 def register_callbacks(app):
     @app.callback(
         Output('kpi-total-revenue', 'children'), 
