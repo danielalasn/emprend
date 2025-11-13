@@ -22,11 +22,16 @@ SLOGANS = [
 # --- ESTILOS PERSONALIZADOS ---
 BACKGROUND_STYLE = {
     "background": "linear-gradient(135deg, #32a852 0%, #2c3e50 100%)",
-    "minHeight": "100vh",
+    "height": "100vh",      
+    "width": "100vw",      
     "display": "flex",
     "alignItems": "center",
     "justifyContent": "center",
-    "padding": "0.5rem"
+    "padding": "0.5rem",
+    "overflow": "hidden", 
+    "position": "fixed",      
+    "top": "0",
+    "left": "0"
 }
 
 CARD_STYLE = {
