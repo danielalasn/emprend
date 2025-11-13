@@ -5,7 +5,7 @@ from flask_login import login_user, current_user
 import dash
 from dash.exceptions import PreventUpdate
 from datetime import date, timedelta
-import random # <-- Importamos random para las frases
+import random
 
 from app import app
 from auth import User, check_password, set_password
@@ -14,11 +14,9 @@ from database import update_user_password, record_first_login
 # --- TUS FRASES SELECCIONADAS ---
 SLOGANS = [
     "Administra menos, crece más.",
+    "Tus números claros, tu mente en el negocio.",
     "Donde los pequeños negocios se hacen grandes.",
-    "Números claros, mente clara.",
-    "Domina tus costos, maximiza tus márgenes.",
-    "Administra menos, crece más.",
-    "Convierte el caos operativo en rentabilidad real."
+    "Números claros, mente clara."
 ]
 
 # --- ESTILOS PERSONALIZADOS ---
@@ -39,7 +37,6 @@ CARD_STYLE = {
 # --- LAYOUTS DE AUTENTICACIÓN ---
 
 def get_login_layout():
-    # Seleccionar una frase aleatoria cada vez que se carga el layout
     selected_slogan = random.choice(SLOGANS)
 
     return html.Div(style=BACKGROUND_STYLE, children=[
@@ -47,40 +44,33 @@ def get_login_layout():
             dbc.Row(
                 dbc.Col(
                     dbc.Card([
-                        # Cabecera decorativa
+                        # Cabecera
                         html.Div(
                             className="bg-white text-center pt-4 pb-2",
                             children=[
-                                # Logo / Icono Grande
                                 html.Div(
                                     html.I(className="fas fa-chart-line", style={"fontSize": "4rem", "color": "#32a852"}),
                                     className="mb-2"
                                 ),
-                                # Nombre de la App
                                 html.H2("Empren-D", className="fw-bold text-dark", style={"letterSpacing": "1px"}),
-                                # Frase Aleatoria Aquí
                                 html.P(selected_slogan, className="text-muted small text-uppercase fw-bold px-3")
                             ]
                         ),
                         
                         dbc.CardBody([
                             html.H5("Iniciar Sesión", className="text-center mb-4 fw-normal"),
-                            
                             html.Div(id='login-alert'),
                             
-                            # Input Usuario con Icono
                             dbc.InputGroup([
                                 dbc.InputGroupText(html.I(className="fas fa-user")),
                                 dbc.Input(id="username", type="text", placeholder="Nombre de usuario", autoFocus=True)
                             ], className="mb-3"),
                             
-                            # Input Password con Icono
                             dbc.InputGroup([
                                 dbc.InputGroupText(html.I(className="fas fa-lock")),
                                 dbc.Input(id="password", type="password", placeholder="Contraseña")
                             ], className="mb-4"),
                             
-                            # Botón con estilo
                             dbc.Button(
                                 "INGRESAR", 
                                 id="login-button", 
@@ -90,18 +80,54 @@ def get_login_layout():
                                 className="w-100 fw-bold shadow-sm",
                                 style={"borderRadius": "30px"}
                             ),
+
+                            # --- NUEVO: LINK PARA RECUPERAR CONTRASEÑA ---
+                            html.Div(
+                                html.A("¿Olvidaste tu contraseña?", id="open-forgot-password", href="#", className="text-muted small", style={"textDecoration": "none"}),
+                                className="text-center mt-3"
+                            )
                         ], className="p-4"),
                         
-                        # Pie de tarjeta
+                        # Pie de tarjeta (Crear Usuario)
                         dbc.CardFooter(
-                            html.Small("¿Olvidaste tu contraseña? Contacta al administrador.", className="text-muted"),
-                            className="text-center bg-light py-3 border-0"
+                            html.Div([
+                                html.A("¿No tienes cuenta? Crear Usuario", id="open-contact-modal", href="#", className="text-muted small", style={"textDecoration": "none"}),
+                            ], className="text-center"),
+                            className="bg-light py-3 border-0"
                         )
                     ], className="shadow-lg", style=CARD_STYLE),
                     width=10, sm=8, md=6, lg=4
                 ),
                 justify="center"
-            )
+            ),
+
+            # --- MODAL DE CONTACTO (Soporte General) ---
+            dbc.Modal([
+                dbc.ModalHeader(dbc.ModalTitle("Ayuda y Soporte")), # Título genérico
+                dbc.ModalBody([
+                    html.P("La gestión de cuentas (registro y recuperación) se realiza manualmente por seguridad.", className="text-muted"),
+                    html.P("Por favor, contacta al administrador con tu solicitud:", className="fw-bold"),
+                    html.Hr(),
+                    html.Div([
+                        html.H5("Soporte Empren-D", className="text-success mb-3"),
+                        
+                        html.Div([
+                            html.I(className="fas fa-envelope me-3 text-secondary"),
+                            html.Span("infoemprend.sv@gmail.com", className="fw-bold") 
+                        ], className="mb-2"),
+                        
+                        html.Div([
+                            html.I(className="fas fa-phone me-3 text-secondary"),
+                            html.Span("+503 7600 3378", className="fw-bold")     
+                        ]),
+                        
+                    ], className="p-3 bg-light rounded")
+                ]),
+                dbc.ModalFooter(
+                    dbc.Button("Cerrar", id="close-contact-modal", className="ms-auto", n_clicks=0)
+                )
+            ], id="contact-modal", is_open=False, centered=True),
+
         ], fluid=True)
     ])
 
@@ -156,6 +182,21 @@ def get_change_password_layout():
 
 def register_login_callbacks(app):
 
+    # --- CALLBACK UNIFICADO: Maneja ambos enlaces (Crear cuenta y Olvidé contraseña) ---
+    @app.callback(
+        Output("contact-modal", "is_open"),
+        [Input("open-contact-modal", "n_clicks"), 
+         Input("open-forgot-password", "n_clicks"), # Nuevo Input
+         Input("close-contact-modal", "n_clicks")],
+        [State("contact-modal", "is_open")],
+    )
+    def toggle_contact_modal(n1, n2, n3, is_open):
+        # Si cualquiera de los 3 botones es presionado, cambiamos el estado
+        if n1 or n2 or n3:
+            return not is_open
+        return is_open
+
+    # Callback de Login
     @app.callback(
         Output('url', 'pathname', allow_duplicate=True),
         Output('login-alert', 'children'),
@@ -195,6 +236,7 @@ def register_login_callbacks(app):
         else:
             return no_url_update, dbc.Alert("Usuario o contraseña incorrectos.", color="danger", dismissable=True)
 
+    # Callback de Cambio de Contraseña
     @app.callback(
         Output('change-password-alert', 'children'),
         Output('url', 'pathname', allow_duplicate=True),
