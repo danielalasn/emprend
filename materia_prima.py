@@ -32,7 +32,7 @@ def get_layout():
         dcc.Store(id='store-material-id-to-edit'),
         dcc.Store(id='store-material-id-to-delete'),
 
-        # --- MODALES (Sin cambios visuales mayores) ---
+        # --- Modal Editar Insumo ---
         dbc.Modal([
             dbc.ModalHeader("Editar Insumo"),
             dbc.ModalBody(dbc.Form([
@@ -66,6 +66,7 @@ def get_layout():
             ]),
         ], id="material-edit-modal", is_open=False),
 
+        # Modal Confirmar Eliminación
         dbc.Modal([
             dbc.ModalHeader("Confirmar Eliminación"),
             dbc.ModalBody("¿Estás seguro de que quieres eliminar este insumo?"),
@@ -75,12 +76,12 @@ def get_layout():
             ]),
         ], id="material-delete-confirm-modal", is_open=False),
 
-        # --- TABS PRINCIPALES ---
+        # Tabs Principales
         dbc.Tabs(id="material-sub-tabs", active_tab="sub-tab-material-inventory", children=[
             
-            # --- Tab: Ver Inventario ---
-            dbc.Tab(label="Inventario de Insumos", tab_id="sub-tab-material-inventory", children=[
-                html.Div(className="p-2 p-md-4", children=[ # Padding responsivo
+            # 1. INVENTARIO
+            dbc.Tab(label="Inventario", tab_id="sub-tab-material-inventory", children=[
+                html.Div(className="p-2 p-md-4", children=[
                     html.H3("Inventario Actual de Materia Prima", className="mb-3"),
                     dbc.Button("Borrar Seleccionados", id="delete-selected-materials-btn", color="danger", n_clicks=0, className="mb-3"),
                     html.Div(id='bulk-delete-materials-output'),
@@ -105,7 +106,7 @@ def get_layout():
                         row_selectable='multi',
                         selected_rows=[],
                         selected_row_ids=[],
-                        style_table={'overflowX': 'auto'}, # Scroll horizontal
+                        style_table={'overflowX': 'auto'}, 
                         style_cell={
                             'textAlign': 'left',
                             'minWidth': '100px', 'width': '120px', 'maxWidth': '300px',
@@ -122,52 +123,11 @@ def get_layout():
                 ])
             ]), 
 
-            # --- Tab: Añadir Insumo (RESPONSIVO) ---
-            dbc.Tab(label="Añadir Insumo", tab_id="sub-tab-add-material", children=[
-                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ # Margen responsivo
-                    dbc.CardBody([
-                        html.H3("Definir Nuevo Insumo", className="card-title mb-4"),
-                        html.Div(id="add-material-alert"),
-                        
-                        dbc.Row([
-                            dbc.Col(html.Div([
-                                dbc.Label("Nombre del Insumo:", html_for="material-name-input", className="fw-bold small"),
-                                dbc.Input(id="material-name-input", type="text", placeholder="Ej: Ajo en Polvo")
-                            ]), xs=12, md=6, className="mb-3 mb-md-0"),
-                            
-                            dbc.Col(html.Div([
-                                dbc.Label("Unidad de Medida:", html_for="material-unit-dropdown", className="fw-bold small"),
-                                dcc.Dropdown(id="material-unit-dropdown", options=unit_options, placeholder="Selecciona unidad...")
-                            ]), xs=12, md=6),
-                        ], className="mb-3"),
-                        
-                         dbc.Row([
-                             dbc.Col(html.Div([
-                                 dbc.Label("Stock Actual (Opcional):", html_for="material-stock-input", className="fw-bold small"),
-                                 dbc.Input(id="material-stock-input", type="number", min=0, step="any", placeholder=0)
-                             ]), xs=12, md=4, className="mb-3 mb-md-0"),
-                             
-                             dbc.Col(html.Div([
-                                 dbc.Label("Costo Total (Del stock inicial):", html_for="material-cost-input", className="fw-bold small"),
-                                 dbc.Input(id="material-cost-input", type="number", min=0, step="any", placeholder=0)
-                             ]), xs=12, md=4, className="mb-3 mb-md-0"),
-                             
-                             dbc.Col(html.Div([
-                                dbc.Label("Alerta Stock Bajo:", html_for="material-alert-input", className="fw-bold small"),
-                                dbc.Input(id="material-alert-input", type="number", min=0, step="any", placeholder=0)
-                             ]), xs=12, md=4),
-                         ], className="mb-3"),
-                         
-                        dbc.Button("Guardar Nuevo Insumo", id="save-material-button", color="success", n_clicks=0, className="mt-3 w-100 w-md-auto")
-                    ])
-                ])
-            ]), 
-
-            # --- Tab: Registrar Compra (RESPONSIVO) ---
-            dbc.Tab(label="Registrar Compra", tab_id="sub-tab-add-purchase", children=[
+            # 2. AÑADIR STOCK (SIN PROVEEDOR)
+            dbc.Tab(label="Añadir Stock", tab_id="sub-tab-add-purchase", children=[
                  dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
                      dbc.CardBody([
-                         html.H3("Registrar Compra de Insumos", className="card-title mb-4"),
+                         html.H3("Añadir Stock de Insumos (Compras)", className="card-title mb-4"),
                          html.Div(id="add-purchase-alert"),
                          
                          dbc.Row([
@@ -196,14 +156,9 @@ def get_layout():
                                      id='purchase-date-picker',
                                      date=today_date,
                                      display_format='YYYY-MM-DD',
-                                     className="w-100" # Ajuste ancho fecha
+                                     className="w-100"
                                  ))
-                             ]), xs=12, md=6, className="mb-3 mb-md-0"),
-                             
-                              dbc.Col(html.Div([
-                                 dbc.Label("Proveedor (Opcional):", html_for="purchase-supplier-input", className="fw-bold small"),
-                                 dbc.Input(id="purchase-supplier-input", type="text")
-                             ]), xs=12, md=6),
+                             ]), width=12), # Ahora ocupa todo el ancho ya que quitamos proveedor
                          ], className="mb-3"),
                          
                          dbc.Row([
@@ -213,12 +168,55 @@ def get_layout():
                              ]), width=12)
                          ], className="mb-3"),
                          
-                         dbc.Button("Guardar Compra", id="save-purchase-button", color="info", n_clicks=0, className="mt-3 w-100 w-md-auto")
+                         dbc.Button("Guardar Compra / Añadir Stock", id="save-purchase-button", color="info", n_clicks=0, className="mt-3 w-100 w-md-auto")
                      ])
                  ])
             ]), 
+
+            # 3. CREAR INSUMO (TEXTO ACTUALIZADO)
+            dbc.Tab(label="Crear Insumo", tab_id="sub-tab-add-material", children=[
+                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ 
+                    dbc.CardBody([
+                        html.H3("Crear Nuevo Insumo", className="card-title mb-4"),
+                        html.Div(id="add-material-alert"),
+                        
+                        dbc.Row([
+                            dbc.Col(html.Div([
+                                dbc.Label("Nombre del Insumo:", html_for="material-name-input", className="fw-bold small"),
+                                dbc.Input(id="material-name-input", type="text", placeholder="Ej: Ajo en Polvo")
+                            ]), xs=12, md=6, className="mb-3 mb-md-0"),
+                            
+                            dbc.Col(html.Div([
+                                dbc.Label("Unidad de Medida:", html_for="material-unit-dropdown", className="fw-bold small"),
+                                dcc.Dropdown(id="material-unit-dropdown", options=unit_options, placeholder="Selecciona unidad...")
+                            ]), xs=12, md=6),
+                        ], className="mb-3"),
+                        
+                         dbc.Row([
+                             dbc.Col(html.Div([
+                                 dbc.Label("Stock Actual (Opcional):", html_for="material-stock-input", className="fw-bold small"),
+                                 dbc.Input(id="material-stock-input", type="number", min=0, step="any", placeholder=0)
+                             ]), xs=12, md=4, className="mb-3 mb-md-0"),
+                             
+                             # CAMBIO DE ETIQUETA AQUÍ:
+                             dbc.Col(html.Div([
+                                 dbc.Label("Costo Total de la Compra:", html_for="material-cost-input", className="fw-bold small"),
+                                 dbc.Input(id="material-cost-input", type="number", min=0, step="any", placeholder=0)
+                             ]), xs=12, md=4, className="mb-3 mb-md-0"),
+                             
+                             dbc.Col(html.Div([
+                                dbc.Label("Alerta Stock Bajo:", html_for="material-alert-input", className="fw-bold small"),
+                                dbc.Input(id="material-alert-input", type="number", min=0, step="any", placeholder=0)
+                             ]), xs=12, md=4),
+                         ], className="mb-3"),
+                         
+                        dbc.Button("Guardar Nuevo Insumo", id="save-material-button", color="success", n_clicks=0, className="mt-3 w-100 w-md-auto")
+                    ])
+                ])
+            ]), 
         ]) 
-    ])
+    ]) 
+
 # --- Callbacks ---
 def register_callbacks(app):
 
@@ -319,29 +317,29 @@ def register_callbacks(app):
         except:
             return []
 
+    # Callback actualizado: SIN PROVEEDOR
     @app.callback(
         Output('add-purchase-alert', 'children', allow_duplicate=True),
         Output('store-data-signal', 'data', allow_duplicate=True),
         Output('purchase-material-dropdown', 'value', allow_duplicate=True), 
         Output('purchase-quantity-input', 'value', allow_duplicate=True),
         Output('purchase-cost-input', 'value', allow_duplicate=True), 
-        Output('purchase-supplier-input', 'value', allow_duplicate=True),
         Output('purchase-notes-input', 'value', allow_duplicate=True),
         Input('save-purchase-button', 'n_clicks'),
         [State('purchase-material-dropdown', 'value'), State('purchase-quantity-input', 'value'),
          State('purchase-cost-input', 'value'), State('purchase-date-picker', 'date'),
-         State('purchase-supplier-input', 'value'), State('purchase-notes-input', 'value'),
+         State('purchase-notes-input', 'value'), # <-- Ya no pedimos supplier
          State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
-    def handle_add_purchase(n_clicks, material_id, quantity, cost, date_str, supplier, notes, signal_data):
+    def handle_add_purchase(n_clicks, material_id, quantity, cost, date_str, notes, signal_data):
         if n_clicks is None or n_clicks < 1: raise PreventUpdate
         if not current_user.is_authenticated: raise PreventUpdate
 
         user_id = int(current_user.id)
 
         if material_id is None or quantity is None or cost is None or date_str is None:
-             return dbc.Alert("Insumo, Cantidad, Costo Total y Fecha son obligatorios.", color="warning"), dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+             return dbc.Alert("Insumo, Cantidad, Costo Total y Fecha son obligatorios.", color="warning"), dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
         try:
             quantity_float = float(quantity)
@@ -351,13 +349,13 @@ def register_callbacks(app):
             if quantity_float <= 0 or cost_total_float < 0:
                  raise ValueError
         except:
-              return dbc.Alert("Datos inválidos.", color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
+              return dbc.Alert("Datos inválidos.", color="danger"), dash.no_update, material_id, quantity, cost, notes
 
         purchase_data = {
             "material_id": material_id, "quantity_purchased": quantity_float,
             "total_cost": cost_total_float, 
             "purchase_date": purchase_datetime,
-            "supplier": supplier.strip() if supplier else None,
+            "supplier": None, # <-- Enviamos None o string vacía
             "notes": notes.strip() if notes else None
         }
 
@@ -365,9 +363,9 @@ def register_callbacks(app):
 
         if success:
             new_signal = (signal_data or 0) + 1
-            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, None, 0, 0, None, None
+            return dbc.Alert(message, color="success", dismissable=True, duration=4000), new_signal, None, 0, 0, None
         else:
-             return dbc.Alert(message, color="danger"), dash.no_update, material_id, quantity, cost, supplier, notes
+             return dbc.Alert(message, color="danger"), dash.no_update, material_id, quantity, cost, notes
 
     @app.callback(
         Output('material-edit-modal', 'is_open'), Output('material-delete-confirm-modal', 'is_open'),

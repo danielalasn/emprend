@@ -280,67 +280,40 @@ def get_expense_category_options(user_id):
         return []
 
 # --- FUNCIÓN DE CÁLCULO FINANCIERO ---
-def calculate_financials(start_date, end_date, user_id, see_all=False):
-    """Calcula métricas financieras clave usando datos filtrados por fecha desde la BD."""
-    user_id = int(user_id)
-    products = load_products(user_id) # Carga todos (incl. inactivos) para lookups de merge
-
-    # Usar filtros de fecha al cargar, a menos que see_all sea True
+def calculate_financials(start, end, uid, see_all=False):
+    uid = int(uid); products = load_products(uid)
     if see_all:
-        sales_df = load_sales(user_id)
-        expenses_df = load_expenses(user_id)
+        sales_df = load_sales(uid)
+        # CAMBIO IMPORTANTE: Usamos load_expenses_detailed para tener nombres de categorías y conceptos
+        expenses_df = load_expenses_detailed(uid) 
     else:
-        sales_df = load_sales(user_id, start_date=start_date, end_date=end_date)
-        expenses_df = load_expenses(user_id, start_date=start_date, end_date=end_date)
+        sales_df = load_sales(uid, start, end)
+        expenses_df = load_expenses_detailed(uid, start, end) # CAMBIO AQUÍ TAMBIÉN
 
-    # Las columnas de fecha ya vienen como datetime gracias a parse_dates=['...']
+    res = {"total_revenue": 0, "gross_profit": 0, "total_cogs": 0, "net_profit": 0, "num_sales": 0, "avg_ticket": 0, "net_margin": 0, "total_expenses": 0, "unidades_vendidas": 0, "gross_margin": 0, "sales_df": sales_df, "expenses_df": expenses_df, "merged_df": pd.DataFrame()}
 
-    results = { # Diccionario de resultados
-        "total_revenue": 0, "gross_profit": 0, "total_cogs": 0, "net_profit": 0,
-        "num_sales": 0, "avg_ticket": 0, "net_margin": 0, "total_expenses": 0,
-        "unidades_vendidas": 0, "gross_margin": 0, "sales_df": sales_df,
-        "expenses_df": expenses_df, "merged_df": pd.DataFrame()
-    }
-
-    # Cálculos
     if not sales_df.empty:
-        # Convertir columnas NUMERIC a float para cálculos en Pandas si es necesario
-        numeric_cols_sales = ['quantity', 'total_amount', 'cogs_total']
-        for col in numeric_cols_sales:
-             if col in sales_df.columns:
-                 sales_df[col] = pd.to_numeric(sales_df[col], errors='coerce')
-
-        sales_df = sales_df.dropna(subset=numeric_cols_sales) # Eliminar filas con valores no numéricos
-
-        results["num_sales"] = len(sales_df)
-        results["unidades_vendidas"] = int(sales_df['quantity'].sum())
-        results["total_cogs"] = float(sales_df['cogs_total'].sum())
-        results["total_revenue"] = float(sales_df['total_amount'].sum())
-        results["gross_profit"] = results["total_revenue"] - results["total_cogs"]
-
+        for c in ['quantity', 'total_amount', 'cogs_total']: sales_df[c] = pd.to_numeric(sales_df[c], errors='coerce')
+        sales_df.dropna(subset=['quantity', 'total_amount', 'cogs_total'], inplace=True)
+        res["num_sales"] = len(sales_df)
+        res["unidades_vendidas"] = int(sales_df['quantity'].sum())
+        res["total_cogs"] = float(sales_df['cogs_total'].sum())
+        res["total_revenue"] = float(sales_df['total_amount'].sum())
+        res["gross_profit"] = res["total_revenue"] - res["total_cogs"]
         if not products.empty:
-            # Convertir columnas NUMERIC/REAL de products a float para merge
-            numeric_cols_prod = ['price', 'cost', 'stock', 'alert_threshold']
-            for col in numeric_cols_prod:
-                if col in products.columns:
-                     products[col] = pd.to_numeric(products[col], errors='coerce')
-            # Merge (how='left' mantiene todas las ventas, incluso si el producto fue eliminado)
-            results["merged_df"] = pd.merge(sales_df, products, on='product_id', how='left')
+            for c in ['price', 'cost', 'stock', 'alert_threshold']: products[c] = pd.to_numeric(products[c], errors='coerce')
+            res["merged_df"] = pd.merge(sales_df, products, on='product_id', how='left')
 
     if not expenses_df.empty:
          expenses_df['amount'] = pd.to_numeric(expenses_df['amount'], errors='coerce')
-         expenses_df = expenses_df.dropna(subset=['amount'])
-         results["total_expenses"] = float(expenses_df['amount'].sum())
-    else:
-         results["total_expenses"] = 0
+         expenses_df.dropna(subset=['amount'], inplace=True)
+         res["total_expenses"] = float(expenses_df['amount'].sum())
 
-    results["net_profit"] = results["gross_profit"] - results["total_expenses"]
-    results["avg_ticket"] = results["total_revenue"] / results["num_sales"] if results["num_sales"] > 0 else 0
-    results["net_margin"] = (results["net_profit"] / results["total_revenue"] * 100) if results["total_revenue"] != 0 else 0
-    results["gross_margin"] = (results["gross_profit"] / results["total_revenue"] * 100) if results["total_revenue"] != 0 else 0
-
-    return results
-
+    res["net_profit"] = res["gross_profit"] - res["total_expenses"]
+    res["avg_ticket"] = res["total_revenue"] / res["num_sales"] if res["num_sales"] > 0 else 0
+    res["net_margin"] = (res["net_profit"] / res["total_revenue"] * 100) if res["total_revenue"] != 0 else 0
+    res["gross_margin"] = (res["gross_profit"] / res["total_revenue"] * 100) if res["total_revenue"] != 0 else 0
+    return res
 # ### FUNCIONES DE ADMINISTRACIÓN ###
 def get_all_users():
     """Obtiene todos los usuarios con sus detalles."""

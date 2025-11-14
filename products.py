@@ -131,11 +131,28 @@ def get_layout():
                 ])
             ]),
 
-            # --- Tab: Añadir Producto ---
-            dbc.Tab(label="Añadir Producto", tab_id="sub-tab-add-product", children=[
+            # --- Tab: Añadir Stock ---
+            dbc.Tab(label="Añadir Stock", tab_id="sub-tab-add-stock", children=[
+                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
+                    dbc.CardBody([
+                        html.H3("Añadir Stock Producto Existente", className="card-title mb-4"), 
+                        html.Div(id="add-stock-alert"),
+                        
+                        dbc.Row([
+                            dbc.Col([html.Label("Producto", className="fw-bold small"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona...")], xs=12, md=6, className="mb-3 mb-md-0"),
+                            dbc.Col([html.Label("Cantidad a Añadir", className="fw-bold small"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1, placeholder="0")], xs=12, md=6),
+                        ], className="mb-3"),
+                        
+                        dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3 w-100 w-md-auto")
+                    ])
+                ])
+            ]),
+
+            # --- Tab: Crear Producto ---
+            dbc.Tab(label="Crear Producto", tab_id="sub-tab-add-product", children=[
                 dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ 
                     dbc.CardBody([
-                        html.H3("Añadir un Nuevo Producto", className="card-title mb-4"), 
+                        html.H3("Crear Nuevo Producto", className="card-title mb-4"), 
                         html.Div(id="add-product-alert"),
                         
                         dbc.Row([
@@ -166,25 +183,8 @@ def get_layout():
                 ])
             ]),
 
-            # --- Tab: Añadir Stock ---
-            dbc.Tab(label="Añadir Stock", tab_id="sub-tab-add-stock", children=[
-                dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
-                    dbc.CardBody([
-                        html.H3("Añadir Stock Producto Existente", className="card-title mb-4"), 
-                        html.Div(id="add-stock-alert"),
-                        
-                        dbc.Row([
-                            dbc.Col([html.Label("Producto", className="fw-bold small"), dcc.Dropdown(id='add-stock-product-dropdown', placeholder="Selecciona...")], xs=12, md=6, className="mb-3 mb-md-0"),
-                            dbc.Col([html.Label("Cantidad a Añadir", className="fw-bold small"), dbc.Input(id='add-stock-quantity-input', type='number', min=1, step=1, placeholder="0")], xs=12, md=6),
-                        ], className="mb-3"),
-                        
-                        dbc.Button("Añadir Stock", id="submit-add-stock-button", color="info", n_clicks=0, className="mt-3 w-100 w-md-auto")
-                    ])
-                ])
-            ]),
-
-            # --- Tab: Gestionar Categorías ---
-            dbc.Tab(label="Gestionar Categorías", tab_id="sub-tab-categories", children=[
+            # --- Tab: Crear Categoría ---
+            dbc.Tab(label="Crear Categoría", tab_id="sub-tab-categories", children=[
                 dbc.Row([
                     dbc.Col([
                         dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ 
@@ -413,6 +413,10 @@ def register_callbacks(app):
             if not categories_df.empty:
                 cats_active = categories_df[categories_df['is_active'] == True].copy() if 'is_active' in categories_df.columns else categories_df.copy()
                 categories_df_display = cats_active; categories_df_display['editar'] = "✏️"; categories_df_display['eliminar'] = "🗑️"
+                # --- CORRECCIÓN AÑADIDA AQUÍ: AGREGAR COLUMNA 'id' ---
+                categories_df_display['id'] = categories_df_display['category_id']
+                # -----------------------------------------------------
+            
             categories_table_content = dash_table.DataTable(id='categories-table',
                 columns=[{"name": "ID", "id": "category_id"}, {"name": "Nombre", "id": "name"}, {"name": "Editar", "id": "editar"}, {"name": "Eliminar", "id": "eliminar"}],
                 data=categories_df_display.to_dict('records'), page_size=10, style_cell={'textAlign': 'left'},
@@ -465,23 +469,16 @@ def register_callbacks(app):
             return (False, True, None, pid, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update)
         raise PreventUpdate
 
-    # Guardar Edición (CORREGIDO: 14 ARGUMENTOS)
+    # Guardar Edición
     @app.callback(
-        Output('product-edit-modal', 'is_open', allow_duplicate=True),
-        Output('store-data-signal', 'data', allow_duplicate=True),
-        Output('edit-product-alert', 'children', allow_duplicate=True),
+        Output('product-edit-modal', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Output('edit-product-alert', 'children'),
         Input('save-edited-product-button', 'n_clicks'),
-        [State('store-product-id-to-edit', 'data'),
-         State('edit-product-name', 'value'), State('edit-product-desc', 'value'),
-         State('edit-product-category', 'value'), State('edit-product-price', 'value'),
-         State('edit-product-cost', 'value'), State('edit-product-stock', 'value'),
-         State('edit-product-alert', 'value'),
-         State('edit-product-materials-dropdown', 'value'),
-         State('edit-product-materials-dropdown', 'options'),
-         State({'type': 'edit-material-quantity', 'index': ALL}, 'value'),
-         State({'type': 'edit-material-quantity', 'index': ALL}, 'id'),
-         State('store-data-signal', 'data')],
-        prevent_initial_call=True
+        [State('store-product-id-to-edit', 'data'), State('edit-product-name', 'value'), State('edit-product-desc', 'value'),
+         State('edit-product-category', 'value'), State('edit-product-price', 'value'), State('edit-product-cost', 'value'),
+         State('edit-product-stock', 'value'), State('edit-product-alert', 'value'),
+         State('edit-product-materials-dropdown', 'value'), State('edit-product-materials-dropdown', 'options'),
+         State({'type': 'edit-material-quantity', 'index': ALL}, 'value'), State({'type': 'edit-material-quantity', 'index': ALL}, 'id'),
+         State('store-data-signal', 'data')], prevent_initial_call=True
     )
     def save_edit(n, pid, name, desc, cat, price, cost, stock, alert, mids, mopts, mquants, mids_ids, sig):
         if not n or not pid: raise PreventUpdate
