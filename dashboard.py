@@ -411,7 +411,12 @@ def register_callbacks(app):
             plot_df['Tipo_Color'] = plot_df.apply(assign_pnl_category, axis=1)
             
             # CAMBIO 2: Actualizar mapa de colores con la nueva llave 'Costos'
-            color_map = {'Costos': "#f39c12", 'Gastos': "#e74c3c", 'P&L Positivo': "#32a852", 'P&L Negativo': "#c0392b"}
+            color_map = {
+                'Costos': "#495057",       # Gris oscuro/Carbón (para costos base)
+                'Gastos': "#493397",       # Ámbar/Amarillo (para gastos operativos)
+                'P&L Positivo': "#32a852",  # Verde Marca (Ganancia)
+                'P&L Negativo': "#dc3545"   # Rojo (Pérdida)
+            }
             
             fig_monthly = px.bar(plot_df, x='month', y='Monto', color='Tipo_Color', title="Resumen Financiero Mensual",
                                  # Quitamos el label 'Tipo_Color' de aquí

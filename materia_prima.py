@@ -17,16 +17,32 @@ from database import (
 )
 
 # --- Layout ---
+# --- Layout ---
 def get_layout():
     """Returns the layout for the Raw Materials section."""
     today_date = date.today()
 
+    # --- AQUÍ ES EL CAMBIO ---
     unit_options = [
-        {'label': 'Unidad(es)', 'value': 'unidad'}, {'label': 'Metro(s)', 'value': 'metro'},
-        {'label': 'Centímetro(s)', 'value': 'cm'}, {'label': 'Litro(s)', 'value': 'litro'},
-        {'label': 'Mililitro(s)', 'value': 'ml'}, {'label': 'Kilogramo(s)', 'value': 'kg'},
-        {'label': 'Gramo(s)', 'value': 'g'}, {'label': 'Par(es)', 'value': 'par'},
+        # Medidas de Peso
+        {'label': 'Libra(s)', 'value': 'libra'},        # <-- AÑADIDO
+        {'label': 'Onza(s)', 'value': 'onza'},          # <-- AÑADIDO
+        {'label': 'Kilogramo(s)', 'value': 'kg'},
+        {'label': 'Gramo(s)', 'value': 'g'},
+        
+        # Medidas de Volumen
+        {'label': 'Litro(s)', 'value': 'litro'},
+        {'label': 'Mililitro(s)', 'value': 'ml'},
+        
+        # Medidas de Longitud
+        {'label': 'Metro(s)', 'value': 'metro'},
+        {'label': 'Centímetro(s)', 'value': 'cm'},
+        
+        # Medidas de Conteo
+        {'label': 'Unidad(es)', 'value': 'unidad'},
+        {'label': 'Par(es)', 'value': 'par'},
     ]
+    # ---------------------------
 
     return html.Div([
         dcc.Store(id='store-material-id-to-edit'),
@@ -40,7 +56,7 @@ def get_layout():
                 dbc.Label("Nombre del Insumo:", html_for="edit-material-name-input"),
                 dbc.Input(id="edit-material-name-input", type="text", className="mb-2"),
                 dbc.Label("Unidad de Medida:", html_for="edit-material-unit-dropdown"),
-                dcc.Dropdown(id="edit-material-unit-dropdown", options=unit_options, className="mb-2"),
+                dcc.Dropdown(id="edit-material-unit-dropdown", options=unit_options, className="mb-2"), # Se actualiza solo
 
                 html.Hr(),
                 dbc.Label("Ajuste Manual (¡Cuidado!):", className="fw-bold text-danger"),
@@ -123,7 +139,7 @@ def get_layout():
                 ])
             ]), 
 
-            # 2. AÑADIR STOCK (SIN PROVEEDOR)
+            # 2. AÑADIR STOCK
             dbc.Tab(label="Añadir Stock", tab_id="sub-tab-add-purchase", children=[
                  dbc.Card(className="m-2 m-md-4 shadow-sm", children=[
                      dbc.CardBody([
@@ -158,7 +174,7 @@ def get_layout():
                                      display_format='YYYY-MM-DD',
                                      className="w-100"
                                  ))
-                             ]), width=12), # Ahora ocupa todo el ancho ya que quitamos proveedor
+                             ]), width=12),
                          ], className="mb-3"),
                          
                          dbc.Row([
@@ -173,7 +189,7 @@ def get_layout():
                  ])
             ]), 
 
-            # 3. CREAR INSUMO (TEXTO ACTUALIZADO)
+            # 3. CREAR INSUMO
             dbc.Tab(label="Crear Insumo", tab_id="sub-tab-add-material", children=[
                 dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ 
                     dbc.CardBody([
@@ -198,7 +214,6 @@ def get_layout():
                                  dbc.Input(id="material-stock-input", type="number", min=0, step="any", placeholder=0)
                              ]), xs=12, md=4, className="mb-3 mb-md-0"),
                              
-                             # CAMBIO DE ETIQUETA AQUÍ:
                              dbc.Col(html.Div([
                                  dbc.Label("Costo Total de la Compra:", html_for="material-cost-input", className="fw-bold small"),
                                  dbc.Input(id="material-cost-input", type="number", min=0, step="any", placeholder=0)
@@ -215,8 +230,7 @@ def get_layout():
                 ])
             ]), 
         ]) 
-    ]) 
-
+    ])
 # --- Callbacks ---
 def register_callbacks(app):
 

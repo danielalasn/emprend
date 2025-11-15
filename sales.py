@@ -10,6 +10,7 @@ import io
 import dash
 from flask_login import current_user
 from datetime import datetime
+from sqlalchemy import text 
 
 from app import app
 from database import (
@@ -22,6 +23,7 @@ def get_layout():
     return html.Div([
         dcc.Store(id='store-sale-id-to-edit'),
         dcc.Store(id='store-sale-id-to-delete'),
+        # Eliminamos el dcc.Store('client-timestamp-store')
 
         # --- MODAL EDITAR VENTA ---
         dbc.Modal([ 
@@ -63,10 +65,9 @@ def get_layout():
              # TAB 1: REGISTRAR VENTA
              dbc.Tab(label="Registrar Venta", tab_id="tab-register-sale", children=[
                  
-                 # Tarjeta de Registro
                  dbc.Card(className="m-2 m-md-4 shadow-sm", children=[ 
                      dbc.CardBody([
-                         html.H3("Registrar Venta", className="card-title mb-4"),
+                         html.H3("Registrar una Nueva Venta", className="card-title mb-4"),
                          html.Div(id="sale-validation-alert"),
                          
                          dbc.Row([
@@ -77,7 +78,7 @@ def get_layout():
                              
                              dbc.Col([
                                  html.Label("Cantidad Vendida", className="fw-bold small"), 
-                                 dbc.Input(id='quantity-input', type='number', min=1, step=1, placeholder=0)
+                                 dbc.Input(id='quantity-input', type='number', min=1, step=1, value=1)
                              ], xs=12, md=6),
                          ], className="mb-3"),
                          
@@ -85,7 +86,6 @@ def get_layout():
                      ])
                  ]),
 
-                 # Acordeón Importar Excel
                  dbc.Accordion([ 
                      dbc.AccordionItem(
                          children=[ 
@@ -167,24 +167,26 @@ def get_layout():
 
 def register_callbacks(app):
 
-    # --- 1. REGISTRAR VENTA ---
+    # --- 1. REGISTRAR VENTA (SERVER-SIDE, USA HORA LOCAL) ---
     @app.callback(
         Output('sale-validation-alert', 'children'),
         Output('store-data-signal', 'data', allow_duplicate=True), 
-        Input('submit-sale-button', 'n_clicks'),
-        [State('product-dropdown', 'value'), State('quantity-input', 'value'),
+        Input('submit-sale-button', 'n_clicks'), # <-- Disparador es el botón
+        [State('product-dropdown', 'value'), 
+         State('quantity-input', 'value'),
          State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
-    def register_sale(n, prod_id, qty, signal_data):
-        if not current_user.is_authenticated or not prod_id or not qty:
+    def register_sale(n_clicks, prod_id, qty, signal_data):
+        if not current_user.is_authenticated or not all([prod_id, qty, n_clicks]):
             raise PreventUpdate
 
         user_id = int(current_user.id) 
         try:
             qty = int(qty)
-            if qty <= 0: return dbc.Alert("La cantidad debe ser mayor a cero.", color="danger", dismissable=True), dash.no_update
-        except: return dbc.Alert("Cantidad no válida.", color="danger", dismissable=True), dash.no_update
+            if qty <= 0: return dbc.Alert("Error: La cantidad debe ser mayor a cero.", color="danger", dismissable=True), dash.no_update
+        except (ValueError, TypeError):
+             return dbc.Alert("Error: Cantidad no válida.", color="danger", dismissable=True), dash.no_update
 
         success = attempt_stock_deduction(prod_id, qty, user_id)
 
@@ -192,26 +194,30 @@ def register_callbacks(app):
             products_df = load_products(user_id)
             try:
                 current_stock = products_df.loc[products_df['product_id'] == prod_id, 'stock'].iloc[0]
-                return dbc.Alert(f"Stock insuficiente. Solo quedan {current_stock}.", color="danger", dismissable=True), dash.no_update
-            except: return dbc.Alert(f"Producto no encontrado.", color="danger", dismissable=True), dash.no_update
+                return dbc.Alert(f"Error: Stock insuficiente. Solo quedan {current_stock}.", color="danger", dismissable=True), dash.no_update
+            except IndexError:
+                 return dbc.Alert(f"Error: Producto no encontrado.", color="danger", dismissable=True), dash.no_update
 
         try:
             products_df = load_products(user_id) 
             info = products_df.loc[products_df['product_id'] == prod_id].iloc[0]
+
+            # Obtenemos la hora del servidor (que será tu hora local al correr en tu PC)
+            sale_time = datetime.now() 
 
             pd.DataFrame([{
                 'product_id': prod_id,
                 'quantity': qty,
                 'total_amount': info['price'] * qty,
                 'cogs_total': info['cost'] * qty,
-                'sale_date': datetime.now(), 
+                'sale_date': sale_time, # <-- Usamos la hora local del servidor
                 'user_id': user_id
             }]).to_sql('sales', engine, if_exists='append', index=False)
 
-            return dbc.Alert("¡Venta registrada!", color="success", dismissable=True, duration=3000), (signal_data or 0) + 1
+            new_signal = (signal_data or 0) + 1
+            return dbc.Alert("¡Venta registrada!", color="success", dismissable=True, duration=4000), new_signal
 
         except Exception as e:
-            # Rollback manual de stock si falla la inserción
             try:
                  products_df = load_products(user_id)
                  info = products_df.loc[products_df['product_id'] == prod_id].iloc[0]
@@ -220,7 +226,7 @@ def register_callbacks(app):
             return dbc.Alert(f"Error al registrar la venta: {e}", color="danger"), dash.no_update
 
 
-    # --- 2. REFRESCAR DATOS Y DROPDOWNS ---
+    # --- 2. REFRESCAR TABLA Y DROPDOWNS ---
     @app.callback(
         Output('history-table', 'data'), 
         Output('product-dropdown', 'options'),
@@ -236,7 +242,6 @@ def register_callbacks(app):
         products_df = load_products(user_id)
         categories_df = load_categories(user_id)
 
-        # Preparar Tabla Historial
         df_show = pd.DataFrame()
         if not sales_df.empty:
             df_show = pd.merge(sales_df, products_df, on='product_id', how='left')
@@ -251,14 +256,11 @@ def register_callbacks(app):
             df_show['eliminar'] = "🗑️"
             df_show['id'] = df_show['sale_id'] 
 
-        # Preparar Dropdowns (Categoria - Producto)
+        # Dropdowns (Categoria - Producto)
         product_options = []
         if not products_df.empty:
-            # Unir productos con categorías para el nombre compuesto
             merged_prods = pd.merge(products_df, categories_df, on='category_id', how='left')
             merged_prods['cat_name'] = merged_prods['name_y'].fillna('Sin Categoría')
-            
-            # Filtrar solo activos
             active_prods = merged_prods[merged_prods['is_active'] == True] if 'is_active' in merged_prods.columns else merged_prods
             
             product_options = [
@@ -299,20 +301,15 @@ def register_callbacks(app):
         if missing:
             return dbc.Alert(f"Faltan columnas: {', '.join(missing)}.", color="danger"), dash.no_update
         
-        # Cargar datos para mapeo
         products_db = load_products(user_id)
         cats_db = load_categories(user_id)
-        
         if products_db.empty: return dbc.Alert("No hay productos registrados.", color="warning"), dash.no_update
 
-        # Crear Merge para tener (Categoria, Nombre) -> ID
         merged_db = pd.merge(products_db, cats_db, on='category_id', how='left')
         merged_db['cat_clean'] = merged_db['name_y'].fillna('').str.strip().str.lower()
         merged_db['prod_clean'] = merged_db['name_x'].str.strip().str.lower()
         
-        # Mapa: {(cat_lower, prod_lower): product_id}
         product_map = {}
-        # Mapas auxiliares para precios y costos
         prices_lookup = products_db.set_index('product_id')['price'].to_dict()
         costs_lookup = products_db.set_index('product_id')['cost'].to_dict()
         stock_lookup = products_db.set_index('product_id')['stock'].to_dict()
@@ -385,105 +382,133 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def open_sale_modals(cell, data):
-        if not cell or not data or 'row_id' not in cell: raise PreventUpdate
-        
-        sale_id = cell['row_id']
-        col_id = cell['column_id']
-        
-        # Buscar registro por ID
-        record = next((r for r in data if r['id'] == sale_id), None)
-        if not record: raise PreventUpdate
-
-        if col_id == "editar":
-            # Obtener datos frescos de DB si es necesario, pero usaremos lo de la tabla por rapidez
-            # aunque para el producto_id necesitamos el valor crudo, que NO viene en la tabla formateada (viene nombres).
-            # Mejor hacer query rapida.
-            sales_df = load_sales(int(current_user.id))
-            s_info = sales_df[sales_df['sale_id'] == sale_id]
-            if s_info.empty: raise PreventUpdate
-            s_info = s_info.iloc[0]
+        if not current_user.is_authenticated or not cell or 'row_id' not in cell:
+            raise PreventUpdate
             
-            return True, False, sale_id, None, int(s_info['product_id']), s_info['quantity'], str(s_info['sale_date']).split('T')[0]
+        sale_id = cell['row_id']; column_id = cell['column_id']
+        user_id = int(current_user.id); sales_df = load_sales(user_id) 
+        
+        try: sale_info = sales_df[sales_df['sale_id'] == sale_id].iloc[0]
+        except IndexError: raise PreventUpdate
 
-        elif col_id == "eliminar":
+        if column_id == "editar":
+            product_value = int(sale_info['product_id']) if pd.notna(sale_info['product_id']) else None
+            quantity_value = sale_info['quantity']
+            date_value = sale_info['sale_date'].date() if pd.notna(sale_info['sale_date']) else None
+            return True, False, sale_id, None, product_value, quantity_value, date_value
+
+        elif column_id == "eliminar":
             return False, True, None, sale_id, dash.no_update, dash.no_update, dash.no_update
 
         raise PreventUpdate
 
-    # --- 5. GUARDAR EDICIÓN ---
+    # --- 5. GUARDAR EDICIÓN (LÓGICA DE STOCK CORREGIDA) ---
     @app.callback(
-        Output('sale-edit-modal', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True), Output('edit-sale-alert', 'children'),
+        Output('sale-edit-modal', 'is_open', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
+        Output('edit-sale-alert', 'children'),
         Input('save-edited-sale-button', 'n_clicks'),
-        [State('store-sale-id-to-edit', 'data'), State('edit-sale-product', 'value'), State('edit-sale-quantity', 'value'), State('edit-sale-date', 'date'), State('store-data-signal', 'data')],
+        [State('store-sale-id-to-edit', 'data'),
+         State('edit-sale-product', 'value'),
+         State('edit-sale-quantity', 'value'),
+         State('edit-sale-date', 'date'), 
+         State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
     def save_edited_sale(n, sale_id, new_prod_id, new_qty, date_str, signal):
-        if not n: raise PreventUpdate
+        if not n or not sale_id: raise PreventUpdate
         uid = int(current_user.id)
-        if not all([new_prod_id, new_qty, date_str]): return True, dash.no_update, dbc.Alert("Campos incompletos", color="danger")
-        
+
+        if not all([new_prod_id, new_qty, date_str]):
+            return True, dash.no_update, dbc.Alert("Datos incompletos.", color="danger")
         try:
             new_qty = int(new_qty)
-            if new_qty <= 0: raise ValueError
+            if new_qty <= 0: raise ValueError("Cantidad debe ser positiva")
             dt = datetime.strptime(date_str, '%Y-%m-%d')
-        except: return True, dash.no_update, dbc.Alert("Datos inválidos", color="danger")
-
-        # Lógica de Stock (Restaurar anterior, descontar nuevo)
-        # Simplificamos: solo actualizamos datos monetarios basados en el nuevo producto
-        # OJO: La gestión de stock al editar es compleja. 
-        # Asumiremos restauración simple si cambia producto/cantidad
+        except (ValueError, TypeError):
+            return True, dash.no_update, dbc.Alert("Datos inválidos (Cantidad o Fecha).", color="danger")
         
-        # (Lógica de update_sale en database.py ya maneja la actualización de la venta)
-        # Aquí solo recalculamos montos
         try:
-            prods = load_products(uid)
-            p_info = prods.loc[prods['product_id'] == int(new_prod_id)].iloc[0]
-            
-            # NOTA: Para una implementación perfecta de stock, deberíamos revertir el stock anterior y restar el nuevo.
-            # Por brevedad y seguridad, aquí solo actualizamos la venta.
-            # Si deseas gestión estricta de stock en edición, avísame.
-            
-            new_data = {
-                "product_id": int(new_prod_id),
-                "quantity": new_qty,
-                "total_amount": float(p_info['price'] * new_qty),
-                "cogs_total": float(p_info['cost'] * new_qty),
-                "sale_date": dt
-            }
-            update_sale(sale_id, new_data, uid)
-            return False, (signal or 0)+1, None
-        except Exception as e: return True, dash.no_update, dbc.Alert(f"Error: {e}", color="danger")
+            with engine.connect() as conn:
+                with conn.begin(): # Inicia Transacción
+                    
+                    orig_sale = conn.execute(text("SELECT product_id, quantity FROM sales WHERE sale_id=:sid AND user_id=:uid"), 
+                                             {"sid": sale_id, "uid": uid}).fetchone()
+                    if not orig_sale:
+                        raise Exception("Venta original no encontrada.")
+                    
+                    orig_pid = orig_sale.product_id
+                    orig_qty = orig_sale.quantity
 
-    # --- 6. CONFIRMAR ELIMINACIÓN ---
+                    prods_df = pd.read_sql(text("SELECT product_id, stock, price, cost FROM products WHERE user_id=:uid AND product_id = ANY(:pids) FOR UPDATE"), 
+                                           conn, params={"uid": uid, "pids": [int(orig_pid), int(new_prod_id)]})
+                    
+                    stock_map = prods_df.set_index('product_id')['stock'].to_dict()
+                    
+                    if int(orig_pid) == int(new_prod_id):
+                        diff = new_qty - orig_qty
+                        if diff > 0: 
+                            if stock_map.get(new_prod_id, 0) < diff:
+                                raise Exception(f"Stock insuficiente. Solo quedan {stock_map.get(new_prod_id, 0)}.")
+                            conn.execute(text("UPDATE products SET stock = stock - :d WHERE product_id=:pid"), {"d": diff, "pid": new_prod_id})
+                        elif diff < 0: 
+                            conn.execute(text("UPDATE products SET stock = stock + :d WHERE product_id=:pid"), {"d": abs(diff), "pid": new_prod_id})
+                    
+                    else:
+                        conn.execute(text("UPDATE products SET stock = stock + :q WHERE product_id=:pid"), {"q": orig_qty, "pid": orig_pid})
+                        if stock_map.get(new_prod_id, 0) < new_qty:
+                            raise Exception(f"Stock insuficiente para el nuevo producto. (Stock original restaurado).")
+                        conn.execute(text("UPDATE products SET stock = stock - :q WHERE product_id=:pid"), {"q": new_qty, "pid": new_prod_id})
+                    
+                    p_info = prods_df.loc[prods_df['product_id'] == new_prod_id].iloc[0]
+                    new_data = {
+                        "product_id": new_prod_id, "quantity": new_qty,
+                        "total_amount": float(p_info['price'] * new_qty),
+                        "cogs_total": float(p_info['cost'] * new_qty),
+                        "sale_date": dt
+                    }
+                    conn.execute(text("UPDATE sales SET product_id=:product_id, quantity=:quantity, total_amount=:total_amount, sale_date=:sale_date, cogs_total=:cogs_total WHERE sale_id=:sale_id AND user_id=:user_id"),
+                                 {**new_data, "sale_id": int(sale_id), "user_id": uid})
+            
+            return False, (signal or 0)+1, None 
+        
+        except Exception as e:
+            return True, dash.no_update, dbc.Alert(f"Error: {e}", color="danger")
+
+    # --- 6. CONFIRMAR ELIMINACIÓN (LÓGICA CORREGIDA) ---
     @app.callback(
-        Output('sale-delete-confirm-modal', 'is_open', allow_duplicate=True), Output('store-data-signal', 'data', allow_duplicate=True),
+        Output('sale-delete-confirm-modal', 'is_open', allow_duplicate=True),
+        Output('store-data-signal', 'data', allow_duplicate=True),
         Input('confirm-delete-sale-button', 'n_clicks'),
         [State('store-sale-id-to-delete', 'data'), State('store-data-signal', 'data')],
         prevent_initial_call=True
     )
     def confirm_del(n, sid, sig):
-        if n and sid:
-            # Restaurar stock
-            try:
-                sales = load_sales(int(current_user.id))
-                sale = sales[sales['sale_id'] == sid].iloc[0]
-                update_stock(sale['product_id'], int(sale['quantity']), int(current_user.id)) # Sumar stock (lógica interna de update_stock no suma, setea. Ojo database.py update_stock hace SET stock = :stock)
-                # Corrección: update_stock en database.py hace un UPDATE directo. 
-                # Necesitamos leer stock actual y sumar.
-                # Como esto es complejo, delete_sales_bulk ya lo hace bien. delete_sale individual en database.py NO restaura stock automáticamente en el código actual.
-                # Vamos a usar delete_sales_bulk para borrar 1 solo, ya que esa función SÍ tiene la lógica de restauración.
-                delete_sales_bulk([sid], int(current_user.id))
-            except: 
-                delete_sale(sid, int(current_user.id)) # Fallback
-            
-            return False, (sig or 0)+1
-        raise PreventUpdate
+        if not n or not sid: raise PreventUpdate
+        
+        # Usamos delete_sales_bulk porque ya tiene la lógica de restauración de stock
+        success, msg = delete_sales_bulk([sid], int(current_user.id)) 
+        
+        new_sig = (sig or 0) + 1
+        if not success:
+            # Fallback (sin restauración) si delete_sales_bulk falla
+            delete_sale(sid, int(current_user.id))
+        
+        return False, new_sig
 
     # --- 7. CERRAR MODALES ---
-    @app.callback(Output('sale-edit-modal', 'is_open', allow_duplicate=True), Input('cancel-edit-sale-button', 'n_clicks'), prevent_initial_call=True)
-    def close_edit(n): return False
-    @app.callback(Output('sale-delete-confirm-modal', 'is_open', allow_duplicate=True), Input('cancel-delete-sale-button', 'n_clicks'), prevent_initial_call=True)
-    def close_del(n): return False
+    @app.callback(
+        Output('sale-edit-modal', 'is_open', allow_duplicate=True),
+        Output('sale-delete-confirm-modal', 'is_open', allow_duplicate=True),
+        [Input('cancel-edit-sale-button', 'n_clicks'),
+         Input('cancel-delete-sale-button', 'n_clicks')],
+        prevent_initial_call=True
+    )
+    def close_sale_modals(n_edit, n_delete):
+        triggered_id = dash.callback_context.triggered_id
+        if triggered_id in ['cancel-edit-sale-button', 'cancel-delete-sale-button']:
+            return False, False
+        raise PreventUpdate
 
     # --- 8. DESCARGAR EXCEL ---
     @app.callback(
@@ -492,9 +517,7 @@ def register_callbacks(app):
     def download(n):
         if not n: raise PreventUpdate
         uid = int(current_user.id)
-        df = load_sales(uid)
-        prods = load_products(uid)
-        cats = load_categories(uid)
+        df = load_sales(uid); prods = load_products(uid); cats = load_categories(uid)
         if not df.empty:
             m = pd.merge(df, prods, on='product_id', how='left')
             m = pd.merge(m, cats, on='category_id', how='left')
